@@ -1,0 +1,18 @@
+version: '3'
+
+volumes:
+  db-data:
+
+services:
+  db:
+    container_name: sam_uijeongbu_db
+    image: postgres:16.11
+    ports:
+      - 5435:5432
+    environment:
+      POSTGRES_USER: sam_user
+      POSTGRES_PASSWORD: sam_password123!
+      POSTGRES_DB: sam_uijeongbu
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - db-data:/var/lib/postgresql/data
