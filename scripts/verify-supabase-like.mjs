@@ -1,0 +1,220 @@
+#!/usr/bin/env node
+// ----------------------------------------------------------------------
+// Supabase 같은 DB 에서 전체 마이그레이션 검증 — `pnpm verify:supabase-like`
+//
+// 로컬 docker DB(컨테이너 sam-uijeongbu-db)에 일회용 DB 를 만들어 Flyway 를 돌리고, 끝에 모두 지운다.
+// Supabase 를 흉내 내는 것(Supabase 에만 있어 로컬 Postgres 에서는 조건부로 건너뛰는 부분을 실제로 태운다):
+//   - 클러스터 역할 anon · authenticated, public 스키마 USAGE,
+//   - 마이그레이션 계정(postgres)의 기본 권한 ALL(테이블 · 시퀀스 · 함수) → 새 테이블에 anon 권한이 붙는 상황,
+//   - storage 스키마와 storage.buckets 테이블(V1_0_3 이 media 버킷을 만든다).
+// 확인: ① 빈 DB 전체 적용 → 2회째 up to date → check-security.sql 0행 → anon · authenticated 로 public 접근 거부
+//       → media 버킷 설정(public · 10MB · jpeg/png/webp) → 런타임 계정(sam_app 멤버)이 읽기·쓰기 가능하고 TRUNCATE 거부
+//       ② V1_0_1 까지 적용(anon 권한이 남은 상태를 검사 SQL 이 잡는지) → 나머지 적용 → 0행
+// 지키는 것: 원본 sam_uijeongbu 는 건드리지 않는다(DB 이름은 fixture_supa_ 만). anon · authenticated 는
+//           시작 때 없을 때만 만들고 끝에 지운다. 결과 표를 출력하고 하나라도 틀리면 exit 1.
+// ----------------------------------------------------------------------
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { FLYWAY_IMAGE } from './flyway-args.mjs';
+
+const DB_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const CONTAINER = 'sam-uijeongbu-db';
+const HOST_PORT = 4110;
+const DB_PREFIX = 'fixture_supa_';
+const DB_EMPTY = `${DB_PREFIX}empty`;
+const DB_UPGRADE = `${DB_PREFIX}upgrade`;
+const SUPABASE_ROLES = ['anon', 'authenticated'];
+const RUNTIME_LOGIN = `${DB_PREFIX}api`;
+const SQL_DIR = join(DB_ROOT, 'sql');
+const CHECK_SQL = readFileSync(join(DB_ROOT, 'scripts/check-security.sql'), 'utf8');
+const APP_TABLES = [
+  'admins', 'performances', 'performance_detail_images', 'classes', 'class_days', 'shows', 'members',
+  'actor_profiles', 'actor_filmographies', 'applications', 'galleries', 'schedules', 'staff', 'popups',
+];
+
+const results = [];
+
+function record(scenario, item, expected, actual) {
+  const pass = String(expected) === String(actual);
+  results.push({ scenario, item, expected: String(expected), actual: String(actual), pass });
+  console.log(`  [${pass ? '통과' : '실패'}] ${item} — 기대 ${expected} · 실제 ${actual}`);
+}
+
+function assertFixtureDb(db) {
+  if (!db.startsWith(DB_PREFIX)) throw new Error(`일회용 DB 이름이 아니다: ${db}`);
+}
+
+function psql(db, sql, user = 'postgres') {
+  const run = spawnSync(
+    'docker',
+    ['exec', '-i', CONTAINER, 'psql', '-U', user, '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-At', '-F', '|', '-d', db],
+    { input: sql, encoding: 'utf8' }
+  );
+  return { ok: run.status === 0, out: run.stdout ?? '', err: run.stderr ?? '' };
+}
+
+function psqlOrThrow(db, sql) {
+  const result = psql(db, sql);
+  if (!result.ok) throw new Error(`psql 실패(${db}): ${result.err.trim()}`);
+  return result.out;
+}
+
+function rows(out) {
+  return out.split('\n').filter((line) => line.length > 0);
+}
+
+function flyway(db, args) {
+  assertFixtureDb(db);
+  const run = spawnSync(
+    'docker',
+    [
+      'run', '--rm', '--add-host=host.docker.internal:host-gateway', '-v', `${SQL_DIR}:/flyway/sql:ro`, FLYWAY_IMAGE,
+      `-url=jdbc:postgresql://host.docker.internal:${HOST_PORT}/${db}`, '-user=postgres',
+      '-locations=filesystem:/flyway/sql', '-schemas=public', '-baselineOnMigrate=true', '-baselineVersion=0',
+      '-cleanDisabled=true', ...args,
+    ],
+    { encoding: 'utf8' }
+  );
+  return { ok: run.status === 0, out: `${run.stdout ?? ''}${run.stderr ?? ''}` };
+}
+
+function firstErrorLine(out) {
+  const lines = out.split('\n');
+  return (lines.find((l) => /^Message\s+:/.test(l)) ?? lines.find((l) => /ERROR/.test(l)) ?? lines.at(-1) ?? '').trim();
+}
+
+function dropFixtureDb(db) {
+  assertFixtureDb(db);
+  psql('postgres', `DROP DATABASE IF EXISTS ${db} WITH (FORCE);`);
+}
+
+/** Supabase 흉내 — 역할 기본 권한 + storage.buckets stub */
+function createSupabaseLikeDb(db) {
+  dropFixtureDb(db);
+  psqlOrThrow('postgres', `CREATE DATABASE ${db};`);
+  psqlOrThrow(
+    db,
+    `GRANT USAGE ON SCHEMA public TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated;
+CREATE SCHEMA storage;
+CREATE TABLE storage.buckets (
+    id                 text PRIMARY KEY,
+    name               text NOT NULL,
+    owner              uuid NULL,
+    public             boolean DEFAULT false,
+    file_size_limit    bigint NULL,
+    allowed_mime_types text[] NULL,
+    created_at         timestamptz DEFAULT now(),
+    updated_at         timestamptz DEFAULT now()
+);`
+  );
+}
+
+function verifyAnonDenied(scenario, db) {
+  for (const role of SUPABASE_ROLES) {
+    for (const table of ['applications', 'admins', 'performances', 'flyway_schema_history']) {
+      const result = psql(db, `SET ROLE ${role};\nSELECT 1 FROM public.${table} LIMIT 1;`);
+      const outcome = result.ok ? '성공' : /permission denied/.test(result.err) ? '거부' : result.err.trim();
+      record(scenario, `${role} 로 ${table} SELECT`, '거부', outcome);
+    }
+  }
+}
+
+function verifyRuntimeRole(scenario, db) {
+  const insert = psql(
+    db,
+    `INSERT INTO performances (id, title, type, status) VALUES ('00000000-0000-7000-8000-000000000001', 'fixture-supa', 'PLAY', 'ONGOING');
+SELECT count(*) FROM performances;`,
+    RUNTIME_LOGIN
+  );
+  record(scenario, '런타임 계정 INSERT·SELECT(RLS 정책 sam_app_all)', '1', insert.ok ? rows(insert.out).at(-1) : insert.err.trim());
+  const truncate = psql(db, 'TRUNCATE performances;', RUNTIME_LOGIN);
+  record(scenario, '런타임 계정 TRUNCATE', '거부', truncate.ok ? '성공' : /permission denied/.test(truncate.err) ? '거부' : truncate.err.trim());
+  const deleteSoft = psql(db, 'DELETE FROM performances;', RUNTIME_LOGIN);
+  record(scenario, '런타임 계정 소프트 삭제 테이블 DELETE', '거부', deleteSoft.ok ? '성공' : /permission denied/.test(deleteSoft.err) ? '거부' : deleteSoft.err.trim());
+  const rls = rows(
+    psqlOrThrow(db, `SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND relrowsecurity AND relname = ANY(ARRAY['${APP_TABLES.join("','")}']);`)
+  );
+  record(scenario, 'RLS 켜진 앱 테이블 수', APP_TABLES.length, rls[0]);
+}
+
+function scenarioEmpty() {
+  const s = '① 빈 DB';
+  console.log(`\n== ${s} (${DB_EMPTY})`);
+  createSupabaseLikeDb(DB_EMPTY);
+  const first = flyway(DB_EMPTY, ['migrate']);
+  record(s, '전체 마이그레이션', '성공', first.ok ? '성공' : `실패 — ${firstErrorLine(first.out)}`);
+  if (!first.ok) return;
+  const second = flyway(DB_EMPTY, ['migrate']);
+  record(s, '2회째 migrate 가 up to date', '예', second.ok && /is up to date/.test(second.out) ? '예' : '아니오');
+  const violations = rows(psqlOrThrow(DB_EMPTY, CHECK_SQL));
+  record(s, 'check-security.sql 행 수', 0, violations.length);
+  violations.forEach((line) => console.log(`    위반: ${line}`));
+  verifyAnonDenied(s, DB_EMPTY);
+  const bucket = rows(
+    psqlOrThrow(DB_EMPTY, `SELECT public, file_size_limit, array_to_string(allowed_mime_types, ',') FROM storage.buckets WHERE id = 'media';`)
+  );
+  record(s, 'media 버킷(public|10MB|jpeg,png,webp)', 't|10485760|image/jpeg,image/png,image/webp', bucket[0] ?? '없음');
+  verifyRuntimeRole(s, DB_EMPTY);
+}
+
+function scenarioUpgrade() {
+  const s = '② V1_0_1 → 나머지';
+  console.log(`\n== ${s} (${DB_UPGRADE})`);
+  createSupabaseLikeDb(DB_UPGRADE);
+  const before = flyway(DB_UPGRADE, ['migrate', '-target=1.0.1']);
+  record(s, 'V1_0_1 까지 적용', '성공', before.ok ? '성공' : `실패 — ${firstErrorLine(before.out)}`);
+  if (!before.ok) return;
+  const beforeCheck = rows(psqlOrThrow(DB_UPGRADE, CHECK_SQL));
+  record(s, 'V1_0_2 전 검사 SQL 이 anon 권한·RLS 꺼짐을 찾는다', '예', beforeCheck.length > 0 ? '예' : '아니오');
+  const after = flyway(DB_UPGRADE, ['migrate']);
+  record(s, '나머지 적용', '성공', after.ok ? '성공' : `실패 — ${firstErrorLine(after.out)}`);
+  if (!after.ok) return;
+  record(s, 'check-security.sql 행 수', 0, rows(psqlOrThrow(DB_UPGRADE, CHECK_SQL)).length);
+}
+
+function roleExists(role) {
+  return psqlOrThrow('postgres', `SELECT count(*) FROM pg_roles WHERE rolname = '${role}';`).trim() === '1';
+}
+
+function main() {
+  console.log('Supabase 같은 DB 검증');
+  const startRoles = SUPABASE_ROLES.filter(roleExists);
+  const createdRoles = [];
+  try {
+    for (const db of [DB_EMPTY, DB_UPGRADE]) dropFixtureDb(db);
+    for (const role of SUPABASE_ROLES.filter((r) => !startRoles.includes(r))) {
+      psqlOrThrow('postgres', `CREATE ROLE ${role} NOLOGIN;`);
+      createdRoles.push(role);
+    }
+    psql('postgres', `DROP ROLE IF EXISTS ${RUNTIME_LOGIN};`);
+    // sam_app 은 첫 마이그레이션이 만들지만 로그인 계정이 먼저 있어야 해서 여기서도 멱등 생성한다(클러스터 공용 역할)
+    psqlOrThrow(
+      'postgres',
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sam_app') THEN CREATE ROLE sam_app NOLOGIN; END IF; END $$;
+CREATE ROLE ${RUNTIME_LOGIN} LOGIN IN ROLE sam_app;`
+    );
+    scenarioEmpty();
+    scenarioUpgrade();
+  } catch (error) {
+    results.push({ scenario: '실행', item: '예외 없이 끝남', expected: '예', actual: String(error.message ?? error), pass: false });
+    console.error(error);
+  } finally {
+    for (const db of [DB_EMPTY, DB_UPGRADE]) dropFixtureDb(db);
+    psql('postgres', `DROP ROLE IF EXISTS ${RUNTIME_LOGIN};`);
+    for (const role of createdRoles) psql('postgres', `DROP ROLE IF EXISTS ${role};`);
+    const left = rows(psqlOrThrow('postgres', `SELECT datname FROM pg_database WHERE datname LIKE '${DB_PREFIX}%';`));
+    results.push({ scenario: '정리', item: '일회용 DB 남음', expected: '0', actual: String(left.length), pass: left.length === 0 });
+  }
+  const failed = results.filter((r) => !r.pass);
+  console.log(`\n${results.length}개 중 통과 ${results.length - failed.length} · 실패 ${failed.length}`);
+  failed.forEach((r) => console.log(`  실패: [${r.scenario}] ${r.item} — 기대 ${r.expected} · 실제 ${r.actual}`));
+  process.exit(failed.length === 0 ? 0 : 1);
+}
+
+main();
