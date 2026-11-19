@@ -1,0 +1,35 @@
+# ─── CI: 실행기·SQL 동기화 테스트 + 일회성 PostgreSQL 17 에 마이그레이션 2회(멱등) + 권한·RLS 검사 + Supabase 흉내 검증 ───
+# 운영·개발 DB 마이그레이션은 이 워크플로가 하지 않는다. 배포 순서는 항상
+# ① DB 마이그레이션(pnpm migrate <env>) → ② 권한 검사(pnpm verify:security <env>) → ③ 서버 배포 — 마이그레이션 실패 시 배포 중단.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, release]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm test
+      - name: 로컬 DB(docker compose — 로컬과 같은 이미지·역할)
+        run: docker compose up -d --wait
+      - name: 마이그레이션 2회(멱등) + 이력
+        run: |
+          cp flyway-local.conf.example flyway-local.conf
+          pnpm migrate local
+          pnpm migrate local
+          pnpm migrate:info local
+      - name: 권한·RLS 검사(0행)
+        run: pnpm verify:security local
+      - name: Supabase 흉내 DB 에서 전체 적용(anon 권한 회수 · media 버킷)
+        run: pnpm verify:supabase-like
