@@ -152,3 +152,32 @@ describe('V1_0_7 푸시 구독 마이그레이션 규칙(U37)', () => {
     assert.doesNotMatch(code, /flyway_schema_history/);
   });
 });
+
+describe('V1_0_9 팀 계정·연습실 예약 마이그레이션 규칙', () => {
+  const v109 = readFileSync(join(ROOT, 'sql/V1_0_9__practice_room.sql'), 'utf8');
+
+  it('새 테이블은 모두 같은 파일의 RLS·정책 목록에 있다', () => {
+    const tables = [...v109.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['team_accounts', 'room_reservations']);
+    const rlsList = /new_tables CONSTANT text\[\] := ARRAY\[([^\]]+)\]/.exec(v109)?.[1] ?? '';
+    for (const table of tables) assert.match(rlsList, new RegExp(`'${table}'`));
+  });
+
+  it('겹치는 예약은 EXCLUDE tstzrange [) && 로 DB 가 막는다(J-98·PR-3)', () => {
+    assert.match(
+      v109,
+      /EXCLUDE USING gist \(tstzrange\(start_at, end_at, '\[\)'\) WITH &&\) WHERE \(deleted_at IS NULL\)/
+    );
+  });
+
+  it('비밀번호는 argon2id 해시와 암호화 사본만 저장한다(평문 칸 없음 — J-99)', () => {
+    assert.match(v109, /CHECK \(password_hash LIKE '\$argon2id\$%'\)/);
+    assert.doesNotMatch(v109, /\bpassword\s+(VARCHAR|TEXT)/i);
+  });
+
+  it('DB enum 타입·새 함수를 만들지 않고 flyway_schema_history 를 건드리지 않는다', () => {
+    const withoutCheck = v109.slice(0, v109.indexOf('-- check:begin')) + v109.slice(v109.indexOf('-- check:end'));
+    const code = withoutCheck.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+    assert.doesNotMatch(code, /CREATE TYPE|CREATE (OR REPLACE )?FUNCTION|flyway_schema_history/i);
+  });
+});
