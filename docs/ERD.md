@@ -1,6 +1,6 @@
 # ERD — SAM 의정부
 
-> 최종 반영: **V1_0_7** (2026-11-20 — v1.2.0 배포 묶음: T-SA V1_0_5 일정 취소 · V1_0_6 신청 관심 작품·연락·진행 + U37 V1_0_7 새 예매 푸시 구독). V1_0_4 까지가 R1. 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
+> 최종 반영: **V1_0_10** (2026-11-20 — v1.3.0 바닥: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁. 다음 U41 V1_0_11 · U39 V1_0_12). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
 > 열거값은 VARCHAR + CHECK(UPPER_SNAKE), 시각은 TIMESTAMPTZ, 관리 콘텐츠는 소프트 삭제(`deleted_at`), id 는 UUID(서버가 v7 생성).
 
 ```mermaid
@@ -17,8 +17,8 @@ erDiagram
     actor_profiles ||--o{ actor_filmographies : "출연작(순서)"
     members |o--o{ applications : "단원으로 등록(D6, SET NULL)"
     performances ||--o| booking_policies : "예매 설정(공연당 1행, CASCADE)"
-    performances ||--o{ team_accounts : "팀 계정(V1_0_9, CASCADE)"
-    performances ||--o{ room_reservations : "연습실 예약(V1_0_9, CASCADE)"
+    performances ||--o{ team_accounts : "팀 계정(V1_0_8, CASCADE)"
+    performances ||--o{ room_reservations : "연습실 예약(V1_0_8, CASCADE)"
     team_accounts |o--o{ room_reservations : "예약 팀(SET NULL)"
     performances ||--o{ reservations : "예매(공연 단위 예매번호)"
     shows ||--o{ reservations : "예매(RESTRICT — 예매 있는 회차 삭제 불가)"
@@ -32,9 +32,9 @@ erDiagram
     applications ||--o{ application_performances : "관심·희망 작품(V1_0_6, CASCADE)"
     performances ||--o{ application_performances : "관심 대상(CASCADE)"
     admins ||--o{ push_subscriptions : "기기별 푸시 구독(V1_0_7, CASCADE)"
-    shows ||--o| show_seat_layouts : "좌석 배치 크기(V1_0_10, CASCADE)"
-    shows ||--o{ show_seats : "격자 칸(V1_0_10, CASCADE)"
-    reservations ||--o{ reservation_seats : "예매 좌석(V1_0_10, CASCADE)"
+    shows ||--o| show_seat_layouts : "좌석 배치 크기(V1_0_9, CASCADE)"
+    shows ||--o{ show_seats : "격자 칸(V1_0_9, CASCADE)"
+    reservations ||--o{ reservation_seats : "예매 좌석(V1_0_9, CASCADE)"
     show_seats ||--o{ reservation_seats : "좌석(RESTRICT)"
     performances ||--o{ performance_roles : "배역(CASCADE · name NULL = 출연 묶음, 공연당 1)"
     performance_roles ||--o{ role_casts : "기본 캐스트(CASCADE)"
@@ -91,12 +91,12 @@ erDiagram
 | V1_0_4 | 예매 1단계(U24 R1 + 가격 등급 §11.10): `shows` 반 선택(FK SET NULL)·`booking_enabled`·`updated_at`·UNIQUE(공연·날짜·시각 — 중복이 있으면 한국어 오류로 롤백), `booking_policies`·`price_tiers`(1원 이상 · PUBLIC/LINK_ONLY 토큰)·`reservations`·`reservation_items`(등급 줄 · 직접 입력 줄)·`admission_logs` 신규(RLS·정책·GRANT — 예매 줄·입장 기록은 UPDATE 없음), `members.invite_code`, 예매 변경 규칙 트리거(접수 내용·동의 시각 불변, 회차-공연 짝), 입장 기록 불변 트리거, 끝 검사 |
 | V1_0_5(v1.2.0, 임시 V1_0_6) | 일정 취소(U29, T-SA): `schedules.status`(ACTIVE 기본 — 기존 행 ACTIVE)·`cancel_reason`(≤50)·`cancelled_at`·`observation_closed` + 짝 CHECK + `(status, start_at)` 부분 인덱스. 권한 변경 없음 |
 | V1_0_6(v1.2.0, 임시 V1_0_7) | 신청 관심 작품·연락·진행(U31, T-SA): `application_performances` 신규(CASCADE·RLS·정책·GRANT SELECT/INSERT/DELETE·끝 검사), `applications.interest_undecided`·`contacted_at`·`contact_note`(≤200)·`progress`(기본 RECEIVED — 기존 거절 → DROPPED, 단원 등록 상담 → JOINED)·`progress_updated_at` + CHECK(JOINED 는 상담만, 거절이면 DROPPED) |
-| V1_0_9(임시) | 팀 계정·연습실 예약(U34, T-PR): `performances.team_prefix`, `team_accounts`(아이디 lower 유일 · argon2id 해시 + AES-GCM 사본 · 잠금·세션 버전), `room_reservations`(**EXCLUDE gist tstzrange [) && — 겹침 금지** · 30분 단위·30분~4시간 CHECK · 소프트 삭제), RLS·정책·GRANT, 끝 검사. 배포 때 빈 번호로 재번호(기획 §22.3) |
+| V1_0_8(v1.3.0, 임시 V1_0_9) | 팀 계정·연습실 예약(U34, T-PR): `performances.team_prefix`, `team_accounts`(아이디 lower 유일 · argon2id 해시 + AES-GCM 사본 · 잠금·세션 버전), `room_reservations`(**EXCLUDE gist tstzrange [) && — 겹침 금지** · 30분 단위·30분~4시간 CHECK · 소프트 삭제), RLS·정책·GRANT, 끝 검사. 배포 때 빈 번호로 재번호(기획 §22.3) |
 
 | V1_0_7(v1.2.0, 임시 V1_0_11) | 새 예매 푸시(U37): `push_subscriptions` 신규(관리자 × 기기, endpoint 유일·https, 관리자 삭제 CASCADE, RLS·정책·GRANT), 끝 검사 |
 
 **이어 붙일 자리(R2·R3 — v1.2.0 이 V1_0_5~7 을 썼으므로 다음 빈 번호로)**: `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.
-| V1_0_10(임시) | 좌석 지정(U35): `performances.seat_selection_enabled`, `show_seat_layouts`·`show_seats`(칸 UPDATE 없음)·`reservation_seats`(살아 있는 예매만 부분 유니크) 신규, 예매 상태 ↔ 좌석 active 동기화 트리거, 예매 좌석 쓰기 규칙 트리거 · 초대자 드롭다운(U36): `members.inviter_listed`(기본 true)·`reservations.inviter_category`(MEMBER\|STAFF_RELATED), 끝 검사 |
-| V1_0_8(임시) | R3(U26·U28·U33): `performances.cast_public`(기본 false), `performance_roles`(name NULL = "출연" 묶음 — 부분 유니크 공연당 1)·`role_casts`·`show_role_casts`·`performance_credits`(연결 하나 또는 이름만 · 스냅숏)·`staff_histories` 신규(RLS·정책·GRANT), 끝 검사 |
+| V1_0_9(v1.3.0, 임시 V1_0_10) | 좌석 지정(U35): `performances.seat_selection_enabled`, `show_seat_layouts`·`show_seats`(칸 UPDATE 없음)·`reservation_seats`(살아 있는 예매만 부분 유니크) 신규, 예매 상태 ↔ 좌석 active 동기화 트리거, 예매 좌석 쓰기 규칙 트리거 · 초대자 드롭다운(U36): `members.inviter_listed`(기본 true)·`reservations.inviter_category`(MEMBER\|STAFF_RELATED), 끝 검사 |
+| V1_0_10(v1.3.0, 임시 V1_0_8) | R3(U26·U28·U33): `performances.cast_public`(기본 false), `performance_roles`(name NULL = "출연" 묶음 — 부분 유니크 공연당 1)·`role_casts`·`show_role_casts`·`performance_credits`(연결 하나 또는 이름만 · 스냅숏)·`staff_histories` 신규(RLS·정책·GRANT), 끝 검사 |
 
 **이어 붙일 자리(R2·R3)**: V1_0_5 `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), V1_0_6 `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.

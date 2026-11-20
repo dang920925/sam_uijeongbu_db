@@ -151,8 +151,8 @@ describe('V1_0_7 푸시 구독 마이그레이션 규칙(U37)', () => {
   });
 });
 
-describe('V1_0_10 좌석 지정 마이그레이션 규칙(U35·U36)', () => {
-  const v110 = readFileSync(join(ROOT, 'sql/V1_0_10__seat_maps.sql'), 'utf8');
+describe('V1_0_9 좌석 지정 마이그레이션 규칙(U35·U36)', () => {
+  const v110 = readFileSync(join(ROOT, 'sql/V1_0_9__seat_maps.sql'), 'utf8');
 
   it('DB enum 타입을 만들지 않는다', () => {
     assert.doesNotMatch(v110, /CREATE TYPE/i);
@@ -187,8 +187,8 @@ describe('V1_0_10 좌석 지정 마이그레이션 규칙(U35·U36)', () => {
   });
 });
 
-describe('V1_0_9 팀 계정·연습실 예약 마이그레이션 규칙', () => {
-  const v109 = readFileSync(join(ROOT, 'sql/V1_0_9__practice_room.sql'), 'utf8');
+describe('V1_0_8 팀 계정·연습실 예약 마이그레이션 규칙', () => {
+  const v109 = readFileSync(join(ROOT, 'sql/V1_0_8__practice_room.sql'), 'utf8');
 
   it('새 테이블은 모두 같은 파일의 RLS·정책 목록에 있다', () => {
     const tables = [...v109.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
