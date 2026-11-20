@@ -1,6 +1,6 @@
 # ERD — SAM 의정부
 
-> 최종 반영: **V1_0_10** (2026-11-20 — v1.3.0 바닥: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁. 다음 U41 V1_0_11 · U39 V1_0_12). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
+> 최종 반영: **V1_0_11** (2026-11-20 — v1.3.0: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁 · U39 V1_0_11 단원 공개 동의일. U41 은 다음 릴리스로 미룸). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
 > 열거값은 VARCHAR + CHECK(UPPER_SNAKE), 시각은 TIMESTAMPTZ, 관리 콘텐츠는 소프트 삭제(`deleted_at`), id 는 UUID(서버가 v7 생성).
 
 ```mermaid
@@ -53,7 +53,7 @@ erDiagram
     classes { uuid id PK; uuid performance_id FK; varchar name; time start_time; time end_time; date deadline; varchar location; varchar status "ACTIVE|INACTIVE" }
     class_days { uuid class_id PK; smallint day_of_week PK }
     shows { uuid id PK; uuid class_id FK "NULL 허용(V1_0_4)"; uuid performance_id FK; date show_date; time start_time; varchar venue; varchar status "UPCOMING|BOOKING_OPEN|COMPLETED"; int total_seats; bool booking_enabled "V1_0_4"; timestamptz booking_open_at }
-    members { uuid id PK; varchar name; varchar type "GENERAL|ACTOR"; varchar phone; bool is_visible; date joined_at; varchar invite_code UK "V1_0_4"; timestamptz deleted_at }
+    members { uuid id PK; varchar name; varchar type "GENERAL|ACTOR"; varchar phone; bool is_visible; date joined_at; varchar invite_code UK "V1_0_4"; date public_consent_at "V1_0_11"; timestamptz deleted_at }
     booking_policies { uuid performance_id PK; varchar deposit_bank; varchar deposit_account_number; varchar deposit_account_holder; smallint max_tickets_per_booking "1~20"; smallint deposit_deadline_hours "1~168"; varchar refund_policy_text; varchar inquiry_contact "선택, URL 은 https" }
     reservations { uuid id PK; uuid performance_id FK; uuid show_id FK; char code "4자리, 공연 안 UK"; smallint quantity "줄 합"; int amount "줄 합 또는 관리자 덮어쓰기"; bool tier_token_used; varchar booker_name; varchar booker_phone "숫자만"; varchar depositor_name; uuid inviter_member_id FK; varchar inviter_note; varchar status "PENDING|CONFIRMED|CANCELLED"; varchar source "ONLINE|ADMIN"; timestamptz deposit_due_at; varchar confirmed_by "MANUAL|AUTO"; uuid confirmed_admin_id FK; varchar cancel_reason; smallint admitted_count "0~quantity"; int version }
     price_tiers { uuid id PK; uuid performance_id FK; varchar name "공연 안 UK"; int price "1~1000000"; varchar visibility "PUBLIC|LINK_ONLY"; varchar link_token UK; smallint sort_order; bool is_active }
@@ -94,6 +94,7 @@ erDiagram
 | V1_0_8(v1.3.0, 임시 V1_0_9) | 팀 계정·연습실 예약(U34, T-PR): `performances.team_prefix`, `team_accounts`(아이디 lower 유일 · argon2id 해시 + AES-GCM 사본 · 잠금·세션 버전), `room_reservations`(**EXCLUDE gist tstzrange [) && — 겹침 금지** · 30분 단위·30분~4시간 CHECK · 소프트 삭제), RLS·정책·GRANT, 끝 검사. 배포 때 빈 번호로 재번호(기획 §22.3) |
 
 | V1_0_7(v1.2.0, 임시 V1_0_11) | 새 예매 푸시(U37): `push_subscriptions` 신규(관리자 × 기기, endpoint 유일·https, 관리자 삭제 CASCADE, RLS·정책·GRANT), 끝 검사 |
+| V1_0_11(v1.3.0, U39, 임시 V1_0_12) | 단원 홈페이지 공개 동의일: `members.public_consent_at DATE NULL`(기존 행 NULL). 권한·트리거 변경 없음 |
 
 **이어 붙일 자리(R2·R3 — v1.2.0 이 V1_0_5~7 을 썼으므로 다음 빈 번호로)**: `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.
 | V1_0_9(v1.3.0, 임시 V1_0_10) | 좌석 지정(U35): `performances.seat_selection_enabled`, `show_seat_layouts`·`show_seats`(칸 UPDATE 없음)·`reservation_seats`(살아 있는 예매만 부분 유니크) 신규, 예매 상태 ↔ 좌석 active 동기화 트리거, 예매 좌석 쓰기 규칙 트리거 · 초대자 드롭다운(U36): `members.inviter_listed`(기본 true)·`reservations.inviter_category`(MEMBER\|STAFF_RELATED), 끝 검사 |

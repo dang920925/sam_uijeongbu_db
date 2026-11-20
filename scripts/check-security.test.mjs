@@ -215,3 +215,17 @@ describe('V1_0_8 팀 계정·연습실 예약 마이그레이션 규칙', () => 
     assert.doesNotMatch(code, /CREATE TYPE|CREATE (OR REPLACE )?FUNCTION|flyway_schema_history/i);
   });
 });
+
+describe('V1_0_11 단원 공개 동의일 마이그레이션 규칙(U39)', () => {
+  const v1011 = readFileSync(join(ROOT, 'sql/V1_0_11__member_public_consent.sql'), 'utf8');
+  const code = v1011.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+  it('members 에 NULL 허용 DATE 컬럼만 더하고 새 테이블·권한은 만들지 않는다', () => {
+    assert.match(code, /ALTER TABLE members ADD COLUMN IF NOT EXISTS public_consent_at DATE NULL;/);
+    assert.doesNotMatch(code, /CREATE TABLE|GRANT|DEFAULT/i);
+  });
+
+  it('flyway_schema_history 를 건드리지 않는다', () => {
+    assert.doesNotMatch(code, /flyway_schema_history/);
+  });
+});
