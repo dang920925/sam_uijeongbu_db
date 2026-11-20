@@ -1,18 +1,30 @@
-version: '3'
-
-volumes:
-  db-data:
+# ─── 로컬 개발 DB (PostgreSQL 17 — 운영 Supabase 와 같은 메이저, 사용자 결정 D10) ───
+# 로컬 전용: 127.0.0.1 에만 열고 trust 인증을 쓴다(비밀번호 없음 — 외부에서 접속 불가).
+# development·production 은 이 파일을 쓰지 않는다(Supabase + 플랫폼 시크릿).
+# 포트 4110: 연쇄 작업의 back-end 포트 대역(4100번대, style-guide §8.8). 다른 프로젝트의 5432 와 겹치지 않는다.
+# 버전: 17.12 = 2026-11-19 기준 17.x 최신 마이너(develop §1). 보안 릴리스가 나오면 마이너 태그만 올린다.
+name: sam-uijeongbu
 
 services:
   db:
-    container_name: sam_uijeongbu_db
-    image: postgres:16.11
-    ports:
-      - 5435:5432
+    image: postgres:17.12-alpine
+    container_name: sam-uijeongbu-db
     environment:
-      POSTGRES_USER: sam_user
-      POSTGRES_PASSWORD: sam_password123!
       POSTGRES_DB: sam_uijeongbu
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '127.0.0.1:4110:5432'
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - sam-uijeongbu-db-data:/var/lib/postgresql/data
+      # 첫 기동(빈 볼륨) 때만 실행 — 런타임 역할과 API 로그인 계정 생성
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d sam_uijeongbu']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  sam-uijeongbu-db-data:
+    name: sam-uijeongbu-db-data

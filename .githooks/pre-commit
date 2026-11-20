@@ -1,0 +1,8 @@
+#!/bin/sh
+# ─── pre-commit: 접속 설정·환경 파일 커밋 차단 + 실행기 테스트 ───
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+if echo "$STAGED" | grep -Eq '(^|/)(flyway-[a-z]+\.conf|\.env[^/]*)$' && ! echo "$STAGED" | grep -Eq '\.example$'; then
+  echo "[pre-commit] flyway-*.conf · .env* 는 커밋하지 않습니다(.example 만)."
+  exit 1
+fi
+pnpm test || exit 1

@@ -1,0 +1,24 @@
+# ─── Flyway 접속 (local) ───
+# 로컬 docker DB(trust 인증). 비밀번호 비움
+# 복사: cp flyway-local.conf.example flyway-local.conf (flyway-*.conf 는 gitignore)
+# JDBC 주소. localhost·127.0.0.1 은 실행기가 Flyway 컨테이너 안에서 host.docker.internal 로 바꾼다.
+# Supabase 는 세션 풀러(5432)를 쓴다 — Free 의 직접 연결은 IPv6 전용이라 로컬·CI(IPv4)에서 못 붙는다(develop §7.2)
+flyway.url=jdbc:postgresql://localhost:4110/sam_uijeongbu
+# 마이그레이션 계정(테이블 소유자 · CREATEROLE). API 런타임 계정(sam_api)과 다르다
+flyway.user=postgres
+# 비워 둔다 — FLYWAY_PASSWORD 환경변수가 있으면 그 값을 쓴다
+flyway.password=
+
+# ─── 마이그레이션 규칙 ───
+# SQL 위치(컨테이너 안 /flyway/sql 로 마운트됨)
+flyway.locations=filesystem:/flyway/sql
+# Flyway 가 관리하는 스키마. Supabase 의 auth·storage 등 다른 스키마는 건드리지 않는다
+flyway.schemas=public
+flyway.sqlMigrationPrefix=V
+flyway.sqlMigrationSeparator=__
+flyway.sqlMigrationSuffixes=.sql
+# 기존 스키마가 있는 DB(Supabase 새 프로젝트의 public 에는 확장 등이 있다)에 처음 적용할 때 기준선 0
+flyway.baselineOnMigrate=true
+flyway.baselineVersion=0
+# clean(전체 삭제)은 어느 환경에서도 막는다
+flyway.cleanDisabled=true

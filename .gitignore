@@ -1,0 +1,13 @@
+# ─── Flyway 접속 설정 (.example 만 커밋) ───
+flyway-*.conf
+flyway.conf
+!*.conf.example
+
+# ─── 환경변수 ───
+.env*
+!.env.example
+
+# ─── 기타 ───
+node_modules
+.DS_Store
+*.log

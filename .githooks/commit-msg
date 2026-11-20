@@ -1,0 +1,30 @@
+#!/bin/sh
+# ─── commit-msg: 한국어 Conventional Commits 형식 검사 ───
+# <타입>(<범위>): <제목>  — 마침표 금지, 제목 50자 경고 / 72자 실패
+MSG_FILE="$1"
+SUBJECT=$(head -n 1 "$MSG_FILE")
+
+case "$SUBJECT" in
+  Merge*|Revert*|fixup!*) exit 0 ;;
+esac
+
+if ! echo "$SUBJECT" | grep -Eq '^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+'; then
+  echo "[commit-msg] 형식 오류: <타입>(<범위>): <제목>"
+  echo "  타입: feat fix docs style refactor test chore"
+  exit 1
+fi
+
+if echo "$SUBJECT" | grep -Eq '\.$'; then
+  echo "[commit-msg] 제목 끝에 마침표를 붙이지 않습니다."
+  exit 1
+fi
+
+LEN=$(printf '%s' "$SUBJECT" | wc -m | tr -d ' ')
+if [ "$LEN" -gt 72 ]; then
+  echo "[commit-msg] 제목이 72자를 넘습니다 ($LEN자)."
+  exit 1
+fi
+if [ "$LEN" -gt 50 ]; then
+  echo "[commit-msg] 경고: 제목은 50자 이내를 권장합니다 ($LEN자)."
+fi
+exit 0

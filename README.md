@@ -1,85 +1,42 @@
-# SAM Uijeongbu DB (샘 의정부 데이터베이스 관리)
+# SAM 의정부 DB (Flyway — 스키마 정본)
 
-이 프로젝트는 SAM 의정부 프로젝트를 위한 데이터베이스 스키마 및 마이그레이션을 관리합니다. Docker와 Flyway를 사용하여 로컬 환경에서 손쉽게 데이터베이스를 구축할 수 있습니다.
+## 1. 바로 실행 (local)
 
----
-
-## 1. 사전 준비 (Prerequisites)
-
-아무것도 설치되어 있지 않은 상태라면 아래 도구들을 순서대로 설치해야 합니다.
-
-### 1-1. Docker 설치
-데이터베이스를 내 컴퓨터에서 직접 설치하지 않고 컨테이너 기술로 실행하기 위해 필요합니다.
-- **[Docker Desktop 다운로드](https://www.docker.com/products/docker-desktop/)** 사이트에 접속하여 본인의 OS(Windows/Mac)에 맞는 버전을 설치하세요.
-- 설치 후 실행하여 "Docker Desktop is running" 상태가 되었는지 확인합니다.
-
-### 1-2. Homebrew 설치 (Mac 사용자 권장)
-다양한 개발 도구를 쉽게 설치하기 위한 관리 도구입니다.
-- 터미널(Terminal.app)을 열고 아래 명령어를 입력하세요:
-  ```bash
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  ```
-
-### 1-3. Flyway 및 Make 설치
-DB 마이그레이션 실행을 위해 필요합니다. 터미널에서 아래 명령어를 입력하세요.
-
-**Mac:**
 ```bash
-brew install flyway make
+# 준비물: Docker · Node 24 · pnpm 10 (Flyway 는 docker 이미지로 실행 — 설치 불필요)
+cp flyway-local.conf.example flyway-local.conf
+pnpm db:up                  # postgres:17.12 · 127.0.0.1:4110 · trust · sam_app/sam_api 역할 생성
+pnpm migrate local          # V1 ~ V1_0_3 적용(다시 실행해도 "up to date")
+pnpm migrate:info local
+pnpm verify:security local  # 권한·RLS 위반 0행이면 통과
+pnpm verify:supabase-like   # Supabase 흉내 DB(anon·authenticated·storage)에서 전체 적용·검사
+pnpm test                   # 실행기·SQL 동기화 테스트
 ```
 
-**Windows:**
-- [Flyway 공식 사이트](https://flywaydb.org/download/)에서 다운로드하거나, `choco install flyway` (Chocolatey 사용자)를 사용하세요.
-- 기본적으로 Windows는 `make`가 없으므로 터미널 명령어 대신 `Makefile`의 내용을 직접 실행해야 할 수 있습니다.
+## 2. 환경별 명령 (마지막 인자 `local|development|production`, 생략 시 local)
 
----
+| 명령 | 설명 |
+| --- | --- |
+| `pnpm migrate <env>` | Flyway migrate. production 은 확인 문구 입력 필요 |
+| `pnpm migrate:info <env>` · `pnpm migrate:validate <env>` | 이력 · 검증 |
+| `pnpm verify:security <env>` | 권한·RLS 점검. development·production 은 `CHECK_DATABASE_URL`(마이그레이션 계정 postgres:// 주소) 필요 |
 
-## 2. 시작하기 (Getting Started)
+접속 정보는 `flyway-<env>.conf`(예시 복사), 비밀번호는 `FLYWAY_PASSWORD` 환경변수로만 넣는다.
 
-### 2-1. 데이터베이스 서버 실행
-프로젝트 폴더에서 터미널을 열고 아래 명령어를 입력하여 PostgreSQL 데이터베이스를 실행합니다.
-```bash
-docker-compose up -d
-```
-> **참고:** 처음 실행 시 이미지를 다운로드하느라 시간이 조금 걸릴 수 있습니다.
+## 3. Supabase 적용 순서 (운영·공유 개발 — 사용자가 실행)
 
-### 2-2. 데이터베이스 스키마 반영 (Migration)
-데이터베이스가 켜진 상태에서 테이블과 상태값(ENUM)을 생성하기 위해 마이그레이션을 실행합니다.
-```bash
-make migrate-local
-```
-이 작업이 완료되면 모든 테이블이 생성됩니다.
+1. Supabase 새 프로젝트(서울 `ap-northeast-2`) — Enforce SSL 켬, Data API 끔.
+2. `flyway-production.conf` — 세션 풀러 5432 주소(`?sslmode=require`)와 `postgres.<project-ref>` 계정. `FLYWAY_PASSWORD=<Database password>`.
+3. `pnpm migrate production` → V1(스키마) → V1_0_1(sam_app) → V1_0_2(RLS·anon 회수·끝 검사) → V1_0_3(storage 버킷 media — Supabase 에만 적용).
+4. **런타임 계정**(SQL Editor, 마이그레이션 계정으로 1회):
+   ```sql
+   CREATE ROLE sam_api LOGIN PASSWORD '<openssl rand -base64 32 로 만든 값>' IN ROLE sam_app;
+   ```
+   서버 `DATABASE_URL` = `postgresql://sam_api.<project-ref>:<그 비밀번호>@<풀러 호스트>:6543/postgres?sslmode=require&uselibpqcompat=true`(트랜잭션 풀러).
+   ⚠ 사용자 정의 역할의 풀러 로그인은 추정(E-04) — 실패하면 back-end.md §12 의 대안을 따른다.
+5. (선택, Security Advisor 경고 제거) SQL Editor 에서 `ALTER TABLE public.flyway_schema_history ENABLE ROW LEVEL SECURITY;`
+6. `CHECK_DATABASE_URL=<마이그레이션 계정 주소> pnpm verify:security production` → 위반 0건. 그다음 서버 배포.
+7. Storage → Buckets 에서 `media` 가 public · 10MB · jpeg/png/webp 인지 확인(대시보드에서 바꾸지 않는다 — 바꾸려면 새 마이그레이션).
 
----
-
-## 3. 주요 명령어 (Commands)
-
-| 명령어 | 설명 |
-| :--- | :--- |
-| `make migrate-local` | 최신 스키마 변경사항을 DB에 반영합니다. |
-| `make clean-local` | DB의 모든 데이터를 삭제하고 스키마를 초기화합니다. (주의!) |
-| `make reset-local` | DB를 초기화하고 처음부터 다시 마이그레이션을 수행합니다. |
-| `make repair-local` | 마이그레이션 이력이 꼬였을 때 복구합니다. |
-| `docker-compose stop` | DB 서버를 잠시 중단합니다. |
-| `docker-compose down` | DB 컨테이너를 완전히 삭제합니다. (데이터는 볼륨에 보존됩니다.) |
-
----
-
-## 4. 데이터베이스 접속 정보 (Local)
-
-직접 DB 툴(DBeaver, TablePlus 등)로 접속할 때 사용하세요.
-
-- **Host:** `localhost`
-- **Port:** `5435`
-- **Database:** `sam_uijeongbu`
-- **Username:** `sam_user`
-- **Password:** `sam_password123!`
-
----
-
-## 5. 프로젝트 구조
-
-- `/sql`: 데이터베이스 스키마 변경 이력 파일들 (`V1__init_schema.sql` 등)
-- `docker-compose.yml`: 로컬 DB 서버 설정 정보
-- `flyway.conf`: 마이그레이션 공통 설정
-- `Makefile`: 복잡한 명령어를 짧게 줄여놓은 스크립트 파일
+## 4. 문서
+`docs/ERD.md` · `AGENTS.md`(규칙)
