@@ -32,6 +32,10 @@ erDiagram
     applications ||--o{ application_performances : "관심·희망 작품(V1_0_6, CASCADE)"
     performances ||--o{ application_performances : "관심 대상(CASCADE)"
     admins ||--o{ push_subscriptions : "기기별 푸시 구독(V1_0_7, CASCADE)"
+    shows ||--o| show_seat_layouts : "좌석 배치 크기(V1_0_10, CASCADE)"
+    shows ||--o{ show_seats : "격자 칸(V1_0_10, CASCADE)"
+    reservations ||--o{ reservation_seats : "예매 좌석(V1_0_10, CASCADE)"
+    show_seats ||--o{ reservation_seats : "좌석(RESTRICT)"
 
     admins { uuid id PK; varchar username UK; varchar password_hash "argon2id PHC"; int consecutive_failures; timestamptz locked_until; timestamptz hard_locked_at; int session_version }
     performances { uuid id PK; varchar title; varchar type "MUSICAL|PLAY|SEMINAR|ETC"; varchar status "UPCOMING|ONGOING|ENDED"; text description; varchar poster_image_url; bool is_visible; timestamptz deleted_at }
@@ -46,6 +50,9 @@ erDiagram
     reservation_items { uuid id PK; uuid reservation_id FK; uuid tier_id FK "NULL = 직접 입력"; varchar tier_name "스냅숏"; int unit_price "스냅숏"; smallint quantity; int line_amount }
     admission_logs { uuid id PK; uuid reservation_id FK; smallint delta; smallint admitted_after; uuid admin_id FK }
     push_subscriptions { uuid id PK; uuid admin_id FK; varchar endpoint UK "https"; varchar p256dh; varchar auth; varchar user_agent "기기 이름"; timestamptz last_success_at }
+    show_seat_layouts { uuid show_id PK; smallint row_count "1~40"; smallint col_count "1~60" }
+    show_seats { uuid id PK; uuid show_id FK; smallint row_index "0~39"; smallint col_index "0~59"; varchar kind "SEAT|AISLE|VOID"; varchar row_label "SEAT 만"; smallint seat_number "SEAT 만" }
+    reservation_seats { uuid reservation_id PK; uuid seat_id PK; uuid show_id FK; bool active "부분 UK(show_id, seat_id) WHERE active" }
     actor_profiles { uuid id PK; uuid member_id FK; varchar profile_image_url; varchar intro; varchar sns_url; date activity_start; int display_order }
     actor_filmographies { uuid id PK; uuid actor_profile_id FK; varchar title; varchar role; smallint year; smallint sort_order }
     applications { uuid id PK; varchar app_type; uuid performance_id FK; varchar applicant_name; varchar phone; date preferred_date; varchar status "PENDING|APPROVED|REJECTED"; timestamptz privacy_agreed_at; timestamptz processed_at; uuid member_id FK; bool interest_undecided "V1_0_7"; timestamptz contacted_at "V1_0_7"; varchar contact_note "V1_0_7"; varchar progress "RECEIVED|SCHEDULED|COMPLETED|JOINED|DROPPED V1_0_7"; timestamptz progress_updated_at "V1_0_7" }
@@ -74,3 +81,6 @@ erDiagram
 | V1_0_7(v1.2.0, 임시 V1_0_11) | 새 예매 푸시(U37): `push_subscriptions` 신규(관리자 × 기기, endpoint 유일·https, 관리자 삭제 CASCADE, RLS·정책·GRANT), 끝 검사 |
 
 **이어 붙일 자리(R2·R3 — v1.2.0 이 V1_0_5~7 을 썼으므로 다음 빈 번호로)**: `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.
+| V1_0_10(임시) | 좌석 지정(U35): `performances.seat_selection_enabled`, `show_seat_layouts`·`show_seats`(칸 UPDATE 없음)·`reservation_seats`(살아 있는 예매만 부분 유니크) 신규, 예매 상태 ↔ 좌석 active 동기화 트리거, 예매 좌석 쓰기 규칙 트리거 · 초대자 드롭다운(U36): `members.inviter_listed`(기본 true)·`reservations.inviter_category`(MEMBER\|STAFF_RELATED), 끝 검사 |
+
+**이어 붙일 자리(R2·R3)**: V1_0_5 `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), V1_0_6 `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.

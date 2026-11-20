@@ -148,6 +148,40 @@ describe('V1_0_7 푸시 구독 마이그레이션 규칙(U37)', () => {
 
   it('flyway_schema_history 를 건드리지 않는다', () => {
     const withoutCheck = v111.slice(0, v111.indexOf('-- check:begin')) + v111.slice(v111.indexOf('-- check:end'));
+  });
+});
+
+describe('V1_0_10 좌석 지정 마이그레이션 규칙(U35·U36)', () => {
+  const v110 = readFileSync(join(ROOT, 'sql/V1_0_10__seat_maps.sql'), 'utf8');
+
+  it('DB enum 타입을 만들지 않는다', () => {
+    assert.doesNotMatch(v110, /CREATE TYPE/i);
+  });
+
+  it('새 테이블은 모두 같은 파일의 RLS·정책 목록에 있다', () => {
+    const tables = [...v110.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['show_seat_layouts', 'show_seats', 'reservation_seats']);
+    const rlsList = /new_tables CONSTANT text\[\] := ARRAY\[([^\]]+)\]/.exec(v110)?.[1] ?? '';
+    for (const table of tables) assert.match(rlsList, new RegExp(`'${table}'`));
+  });
+
+  it('살아 있는 예매 좌석만 회차 안에서 유일하다(부분 유니크)', () => {
+    assert.match(v110, /CREATE UNIQUE INDEX IF NOT EXISTS uq_reservation_seats_active\s+ON reservation_seats \(show_id, seat_id\) WHERE active;/);
+  });
+
+  it('취소·되살리기 때 좌석 active 를 같은 트랜잭션에서 맞춘다(상태 트리거)', () => {
+    assert.match(v110, /AFTER UPDATE OF status ON reservations/);
+    assert.match(v110, /UPDATE reservation_seats SET active = false/);
+    assert.match(v110, /UPDATE reservation_seats SET active = true/);
+  });
+
+  it('칸(show_seats)은 런타임 계정에 UPDATE 가 없다', () => {
+    assert.match(v110, /GRANT SELECT, INSERT, DELETE ON show_seats TO sam_app;/);
+    assert.doesNotMatch(v110, /GRANT[^;]*UPDATE[^;]*show_seats/);
+  });
+
+  it('flyway_schema_history 를 건드리지 않는다', () => {
+    const withoutCheck = v110.slice(0, v110.indexOf('-- check:begin')) + v110.slice(v110.indexOf('-- check:end'));
     const code = withoutCheck.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
     assert.doesNotMatch(code, /flyway_schema_history/);
   });
