@@ -39,10 +39,12 @@ docs/ERD.md                                     ERD + 마이그레이션 목록
 ## 6. 핵심 패턴
 - 멱등: `CREATE TABLE IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION/TRIGGER`, 역할·정책은 DO 블록 존재 확인.
 - 불변·한 방향 데이터는 트리거로 DB 가 막는다(V1 `applications_guard_update`).
+- 새 테이블을 만드는 마이그레이션은 끝에 V1_0_2 와 같은 끝 검사 블록(`-- check:begin` ~ `-- check:end`)을 넣는다 — `pnpm test` 가 모든 블록이 `scripts/check-security.sql` 과 같은지 비교한다(V1_0_4).
+- 기존 데이터가 있는 테이블에 UNIQUE 를 더할 때는 먼저 겹침을 세어 있으면 한국어 오류로 롤백한다(데이터를 임의로 지우지 않는다 — V1_0_4).
 - ⚠ 2026-11-19: Flyway 가 잡은 이력 테이블 잠금 때문에 마이그레이션 안에서 `flyway_schema_history` 를 ALTER 하면 멈춘다 — 하지 않는다.
 
 ## 7. 타입 안전성
-금액·수량이 생기면 NUMERIC. 길이 상한은 VARCHAR(n) 또는 CHECK(char_length).
+금액은 원 단위 INTEGER(소수 없음 — 기획 J-29, 예매 V1_0_4), 소수가 필요한 금액이 생기면 NUMERIC. 길이 상한은 VARCHAR(n) 또는 CHECK(char_length).
 
 ## 8. 네이밍 규칙
 테이블 snake_case 복수형, 컬럼 snake_case, 마이그레이션 `V1_0_N__설명_snake_case.sql`.
