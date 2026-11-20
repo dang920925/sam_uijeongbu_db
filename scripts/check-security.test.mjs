@@ -91,3 +91,38 @@ describe('V1_0_4 예매 마이그레이션 규칙', () => {
     assert.doesNotMatch(code, /flyway_schema_history/);
   });
 });
+
+describe('T-SA 마이그레이션 규칙(V1_0_6 일정 취소 · V1_0_7 신청 관심 작품 — 임시 번호)', () => {
+  const v106 = readFileSync(join(ROOT, 'sql/V1_0_6__schedule_cancellation.sql'), 'utf8');
+  const v107 = readFileSync(join(ROOT, 'sql/V1_0_7__application_performances.sql'), 'utf8');
+
+  it('기존 일정은 기본값 ACTIVE 로 채워지고 새 테이블은 만들지 않는다', () => {
+    assert.match(v106, /ADD COLUMN IF NOT EXISTS status\s+VARCHAR\(20\) NOT NULL DEFAULT 'ACTIVE'/);
+    assert.doesNotMatch(v106, /CREATE TABLE/i);
+  });
+
+  it('관심 작품 테이블은 RLS·정책을 켜고 런타임 계정에 UPDATE 를 주지 않는다', () => {
+    assert.match(v107, /ALTER TABLE public\.application_performances ENABLE ROW LEVEL SECURITY/);
+    assert.match(v107, /CREATE POLICY sam_app_all ON public\.application_performances/);
+    assert.match(v107, /GRANT SELECT, INSERT, DELETE ON application_performances TO sam_app;/);
+    assert.doesNotMatch(v107, /GRANT[^;]*UPDATE[^;]*application_performances/);
+  });
+
+  it('기존 신청 채우기(거절 → DROPPED, 단원 등록 상담 → JOINED)가 CHECK 보다 먼저다', () => {
+    const fill = v107.indexOf("SET progress = 'DROPPED'");
+    assert.ok(fill > 0 && fill < v107.indexOf('ck_applications_progress_rejected'));
+    assert.match(v107, /SET progress = 'JOINED'\s+WHERE app_type = 'CONSULTATION' AND member_id IS NOT NULL/);
+  });
+
+  it('다른 미배포 트랙 객체와 flyway_schema_history 를 참조하지 않는다(J-96)', () => {
+    for (const text of [v106, v107]) {
+      const code = (text.includes('-- check:begin')
+        ? text.slice(0, text.indexOf('-- check:begin')) + text.slice(text.indexOf('-- check:end'))
+        : text)
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n');
+      assert.doesNotMatch(code, /flyway_schema_history|deposit_notifications|performance_roles|cast_public/);
+    }
+  });
+});
