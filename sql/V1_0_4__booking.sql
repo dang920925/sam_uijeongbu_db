@@ -343,8 +343,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON shows TO sam_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON booking_policies, price_tiers, reservations TO sam_app;
 -- 예매 줄: 교체 = 삭제 + 추가(UPDATE 없음 — 가격 스냅숏을 고치는 경로를 두지 않는다)
 GRANT SELECT, INSERT, DELETE ON reservation_items TO sam_app;
--- 입장 기록: 추가만(UPDATE 없음 — 최소 권한, 트리거와 이중 방어). DELETE 는 파기(예매 CASCADE)용
-GRANT SELECT, INSERT, DELETE ON admission_logs TO sam_app;
+-- 입장 기록: 추가만 — UPDATE·DELETE 없음(최소 권한, 트리거와 이중 방어). 보유기간 파기는 예매 DELETE 의 FK CASCADE 로
+-- 지워진다 — 참조 동작은 테이블 소유자 권한으로 돌아 sam_app 에 DELETE 가 없어도 된다(qa-r1 §4.2, verify:supabase-like 로 확인).
+GRANT SELECT, INSERT ON admission_logs TO sam_app;
 
 DO $$
 DECLARE

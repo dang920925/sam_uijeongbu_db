@@ -230,8 +230,18 @@ function scenarioBookingUpgrade() {
   record(s, '예매에 쓰인 등급 DELETE', '거부(FK)', deleteTier.ok ? '성공' : /foreign key/.test(deleteTier.err) ? '거부(FK)' : deleteTier.err.trim());
   const updateLog = psql(DB_BOOKING, 'UPDATE admission_logs SET delta = 2;', RUNTIME_LOGIN);
   record(s, '런타임 계정 입장 기록 UPDATE', '거부', updateLog.ok ? '성공' : /permission denied/.test(updateLog.err) ? '거부' : updateLog.err.trim());
+  const deleteLog = psql(DB_BOOKING, 'DELETE FROM admission_logs;', RUNTIME_LOGIN);
+  record(s, '런타임 계정 입장 기록 DELETE', '거부', deleteLog.ok ? '성공' : /permission denied/.test(deleteLog.err) ? '거부' : deleteLog.err.trim());
   const deleteShow = psql(DB_BOOKING, `DELETE FROM shows WHERE id = '00000000-0000-7000-8000-0000000000e1';`, RUNTIME_LOGIN);
   record(s, '예매가 있는 회차 DELETE', '거부(FK)', deleteShow.ok ? '성공' : /foreign key/.test(deleteShow.err) ? '거부(FK)' : deleteShow.err.trim());
+  // 보유기간 파기 경로: 런타임 계정이 예매를 지우면 입장 기록·예매 줄은 FK CASCADE(소유자 권한)로 함께 지워진다
+  const purge = psql(
+    DB_BOOKING,
+    `DELETE FROM reservations WHERE id = '00000000-0000-7000-8000-0000000000f1';
+     SELECT (SELECT count(*) FROM admission_logs) || '|' || (SELECT count(*) FROM reservation_items);`,
+    RUNTIME_LOGIN
+  );
+  record(s, '런타임 계정 예매 DELETE → 입장 기록·줄 CASCADE(남은 수)', '0|0', purge.ok ? rows(purge.out).at(-1) : purge.err.trim());
   record(s, 'check-security.sql 행 수', 0, rows(psqlOrThrow(DB_BOOKING, CHECK_SQL)).length);
 }
 

@@ -73,8 +73,9 @@ describe('V1_0_4 예매 마이그레이션 규칙', () => {
     for (const table of tables) assert.match(rlsList, new RegExp(`'${table}'`));
   });
 
-  it('입장 기록·예매 줄에는 UPDATE 권한을 주지 않는다(추가만 · 가격 스냅숏 보호)', () => {
-    assert.match(v104, /GRANT SELECT, INSERT, DELETE ON admission_logs TO sam_app;/);
+  it('입장 기록은 추가만(UPDATE·DELETE 없음), 예매 줄은 UPDATE 없음(가격 스냅숏 보호)', () => {
+    assert.match(v104, /GRANT SELECT, INSERT ON admission_logs TO sam_app;/);
+    assert.doesNotMatch(v104, /GRANT[^;]*DELETE[^;]*admission_logs/);
     assert.match(v104, /GRANT SELECT, INSERT, DELETE ON reservation_items TO sam_app;/);
     assert.doesNotMatch(v104, /GRANT[^;]*UPDATE[^;]*(admission_logs|reservation_items)/);
   });
