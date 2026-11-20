@@ -2,7 +2,7 @@
 // ----------------------------------------------------------------------
 // 권한·RLS 점검 실행기 — `pnpm verify:security [local|development|production]`
 // scripts/check-security.sql(읽기 전용 SELECT)을 마이그레이션 계정으로 실행해 위반 행을 출력한다. 0행이면 통과(exit 0).
-// - local: 로컬 docker 컨테이너(sam-uijeongbu-db)의 psql 로 실행(trust 인증).
+// - local: 로컬 docker 컨테이너(sam-uijeongbu-db — SAM_DB_CONTAINER 로 바꿀 수 있음)의 psql 로 실행(trust 인증).
 // - development·production: CHECK_DATABASE_URL 환경변수(마이그레이션 계정의 postgres:// 주소 — Supabase 세션 풀러 5432)를
 //   postgres 공식 이미지의 psql 로 실행한다. 주소·비밀번호는 인자·로그에 남기지 않는다(-e 로만 전달).
 //   또는 Supabase SQL Editor 에 check-security.sql 내용을 붙여 넣고 Run → "No rows returned" 확인.
@@ -13,7 +13,8 @@ import { resolve } from 'node:path';
 
 import { ENVIRONMENTS } from './flyway-args.mjs';
 
-const CONTAINER = 'sam-uijeongbu-db';
+// worktree 별 전용 컨테이너(기획 §22.5)를 쓸 때는 SAM_DB_CONTAINER 로 바꾼다(기본은 원본 컨테이너)
+const CONTAINER = process.env.SAM_DB_CONTAINER ?? 'sam-uijeongbu-db';
 const PSQL_IMAGE = 'postgres:17.12-alpine';
 
 function fail(message) {
