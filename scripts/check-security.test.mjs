@@ -92,9 +92,9 @@ describe('V1_0_4 예매 마이그레이션 규칙', () => {
   });
 });
 
-describe('T-SA 마이그레이션 규칙(V1_0_6 일정 취소 · V1_0_7 신청 관심 작품 — 임시 번호)', () => {
-  const v106 = readFileSync(join(ROOT, 'sql/V1_0_6__schedule_cancellation.sql'), 'utf8');
-  const v107 = readFileSync(join(ROOT, 'sql/V1_0_7__application_performances.sql'), 'utf8');
+describe('T-SA 마이그레이션 규칙(V1_0_5 일정 취소 · V1_0_6 신청 관심 작품)', () => {
+  const v106 = readFileSync(join(ROOT, 'sql/V1_0_5__schedule_cancellation.sql'), 'utf8');
+  const v107 = readFileSync(join(ROOT, 'sql/V1_0_6__application_performances.sql'), 'utf8');
 
   it('기존 일정은 기본값 ACTIVE 로 채워지고 새 테이블은 만들지 않는다', () => {
     assert.match(v106, /ADD COLUMN IF NOT EXISTS status\s+VARCHAR\(20\) NOT NULL DEFAULT 'ACTIVE'/);
@@ -127,8 +127,8 @@ describe('T-SA 마이그레이션 규칙(V1_0_6 일정 취소 · V1_0_7 신청 �
   });
 });
 
-describe('V1_0_11 푸시 구독 마이그레이션 규칙(U37)', () => {
-  const v111 = readFileSync(join(ROOT, 'sql/V1_0_11__push_subscriptions.sql'), 'utf8');
+describe('V1_0_7 푸시 구독 마이그레이션 규칙(U37)', () => {
+  const v111 = readFileSync(join(ROOT, 'sql/V1_0_7__push_subscriptions.sql'), 'utf8');
 
   it('새 테이블은 push_subscriptions 하나이고 RLS·정책 목록에 있다', () => {
     const tables = [...v111.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);

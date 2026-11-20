@@ -41,7 +41,7 @@ const APP_TABLES = [
   'actor_profiles', 'actor_filmographies', 'applications', 'galleries', 'schedules', 'staff', 'popups',
   // V1_0_4(예매 1단계)
   'booking_policies', 'price_tiers', 'reservations', 'reservation_items', 'admission_logs',
-  // V1_0_11(임시 — 새 예매 푸시 U37)
+  // V1_0_7(새 예매 푸시 U37 — v1.2.0, 임시 V1_0_11)
   'push_subscriptions',
 ];
 
