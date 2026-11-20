@@ -17,6 +17,9 @@ erDiagram
     actor_profiles ||--o{ actor_filmographies : "출연작(순서)"
     members |o--o{ applications : "단원으로 등록(D6, SET NULL)"
     performances ||--o| booking_policies : "예매 설정(공연당 1행, CASCADE)"
+    performances ||--o{ team_accounts : "팀 계정(V1_0_9, CASCADE)"
+    performances ||--o{ room_reservations : "연습실 예약(V1_0_9, CASCADE)"
+    team_accounts |o--o{ room_reservations : "예약 팀(SET NULL)"
     performances ||--o{ reservations : "예매(공연 단위 예매번호)"
     shows ||--o{ reservations : "예매(RESTRICT — 예매 있는 회차 삭제 불가)"
     members |o--o{ reservations : "초대 단원(SET NULL)"
@@ -51,6 +54,8 @@ erDiagram
     schedules { uuid id PK; varchar title; varchar type "PRACTICE|SHOW|EVENT|ETC"; timestamptz start_at; timestamptz end_at; uuid class_id FK; uuid performance_id FK; varchar status "ACTIVE|CANCELLED V1_0_6"; varchar cancel_reason "V1_0_6"; timestamptz cancelled_at "V1_0_6"; bool observation_closed "V1_0_6"; timestamptz deleted_at }
     staff { uuid id PK; varchar name; varchar role; varchar profile_image_url; varchar bio; int display_order; bool is_visible; timestamptz deleted_at }
     popups { uuid id PK; varchar image_url; varchar link_url; date start_date; date end_date; bool is_active; timestamptz deleted_at }
+    team_accounts { uuid id PK; uuid performance_id FK; varchar label "A,B…"; varchar username UK "lower() 유일"; varchar password_hash "argon2id"; text password_enc "AES-256-GCM iv.ct.tag"; int session_version; int consecutive_failures; timestamptz locked_until; bool is_active; timestamptz revoked_at }
+    room_reservations { uuid id PK; uuid team_account_id FK "NULL"; uuid performance_id FK; varchar team_name "스냅숏"; timestamptz start_at; timestamptz end_at "EXCLUDE gist &&"; varchar memo; timestamptz deleted_at }
 ```
 
 ## 마이그레이션 목록
@@ -64,6 +69,7 @@ erDiagram
 | V1_0_4 | 예매 1단계(U24 R1 + 가격 등급 §11.10): `shows` 반 선택(FK SET NULL)·`booking_enabled`·`updated_at`·UNIQUE(공연·날짜·시각 — 중복이 있으면 한국어 오류로 롤백), `booking_policies`·`price_tiers`(1원 이상 · PUBLIC/LINK_ONLY 토큰)·`reservations`·`reservation_items`(등급 줄 · 직접 입력 줄)·`admission_logs` 신규(RLS·정책·GRANT — 예매 줄·입장 기록은 UPDATE 없음), `members.invite_code`, 예매 변경 규칙 트리거(접수 내용·동의 시각 불변, 회차-공연 짝), 입장 기록 불변 트리거, 끝 검사 |
 | V1_0_5(v1.2.0, 임시 V1_0_6) | 일정 취소(U29, T-SA): `schedules.status`(ACTIVE 기본 — 기존 행 ACTIVE)·`cancel_reason`(≤50)·`cancelled_at`·`observation_closed` + 짝 CHECK + `(status, start_at)` 부분 인덱스. 권한 변경 없음 |
 | V1_0_6(v1.2.0, 임시 V1_0_7) | 신청 관심 작품·연락·진행(U31, T-SA): `application_performances` 신규(CASCADE·RLS·정책·GRANT SELECT/INSERT/DELETE·끝 검사), `applications.interest_undecided`·`contacted_at`·`contact_note`(≤200)·`progress`(기본 RECEIVED — 기존 거절 → DROPPED, 단원 등록 상담 → JOINED)·`progress_updated_at` + CHECK(JOINED 는 상담만, 거절이면 DROPPED) |
+| V1_0_9(임시) | 팀 계정·연습실 예약(U34, T-PR): `performances.team_prefix`, `team_accounts`(아이디 lower 유일 · argon2id 해시 + AES-GCM 사본 · 잠금·세션 버전), `room_reservations`(**EXCLUDE gist tstzrange [) && — 겹침 금지** · 30분 단위·30분~4시간 CHECK · 소프트 삭제), RLS·정책·GRANT, 끝 검사. 배포 때 빈 번호로 재번호(기획 §22.3) |
 
 | V1_0_7(v1.2.0, 임시 V1_0_11) | 새 예매 푸시(U37): `push_subscriptions` 신규(관리자 × 기기, endpoint 유일·https, 관리자 삭제 CASCADE, RLS·정책·GRANT), 끝 검사 |
 
