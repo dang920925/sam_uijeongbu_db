@@ -36,9 +36,19 @@ erDiagram
     shows ||--o{ show_seats : "격자 칸(V1_0_10, CASCADE)"
     reservations ||--o{ reservation_seats : "예매 좌석(V1_0_10, CASCADE)"
     show_seats ||--o{ reservation_seats : "좌석(RESTRICT)"
+    performances ||--o{ performance_roles : "배역(CASCADE · name NULL = 출연 묶음, 공연당 1)"
+    performance_roles ||--o{ role_casts : "기본 캐스트(CASCADE)"
+    performance_roles ||--o{ show_role_casts : "회차 지정(CASCADE)"
+    shows ||--o{ show_role_casts : "회차 지정(CASCADE)"
+    actor_profiles ||--o{ role_casts : "배우(CASCADE)"
+    actor_profiles ||--o{ show_role_casts : "배우(CASCADE)"
+    performances ||--o{ performance_credits : "참여자(CASCADE)"
+    staff |o--o{ performance_credits : "연출진 연결(SET NULL — 이름 스냅숏)"
+    members |o--o{ performance_credits : "단원 연결(SET NULL — 이름 스냅숏)"
+    staff ||--o{ staff_histories : "연혁(순서, CASCADE)"
 
     admins { uuid id PK; varchar username UK; varchar password_hash "argon2id PHC"; int consecutive_failures; timestamptz locked_until; timestamptz hard_locked_at; int session_version }
-    performances { uuid id PK; varchar title; varchar type "MUSICAL|PLAY|SEMINAR|ETC"; varchar status "UPCOMING|ONGOING|ENDED"; text description; varchar poster_image_url; bool is_visible; timestamptz deleted_at }
+    performances { uuid id PK; varchar title; varchar type "MUSICAL|PLAY|SEMINAR|ETC"; varchar status "UPCOMING|ONGOING|ENDED"; text description; varchar poster_image_url; bool is_visible; bool cast_public "V1_0_8 기본 false"; timestamptz deleted_at }
     performance_detail_images { uuid id PK; uuid performance_id FK; varchar image_url; smallint sort_order }
     classes { uuid id PK; uuid performance_id FK; varchar name; time start_time; time end_time; date deadline; varchar location; varchar status "ACTIVE|INACTIVE" }
     class_days { uuid class_id PK; smallint day_of_week PK }
@@ -60,6 +70,11 @@ erDiagram
     galleries { uuid id PK; varchar category; varchar image_url; varchar description; timestamptz deleted_at }
     schedules { uuid id PK; varchar title; varchar type "PRACTICE|SHOW|EVENT|ETC"; timestamptz start_at; timestamptz end_at; uuid class_id FK; uuid performance_id FK; varchar status "ACTIVE|CANCELLED V1_0_6"; varchar cancel_reason "V1_0_6"; timestamptz cancelled_at "V1_0_6"; bool observation_closed "V1_0_6"; timestamptz deleted_at }
     staff { uuid id PK; varchar name; varchar role; varchar profile_image_url; varchar bio; int display_order; bool is_visible; timestamptz deleted_at }
+    performance_roles { uuid id PK; uuid performance_id FK; varchar name "NULL = 출연 묶음"; varchar description; smallint sort_order; bool is_recruiting }
+    role_casts { uuid id PK; uuid role_id FK; uuid actor_profile_id FK; varchar note; smallint sort_order }
+    show_role_casts { uuid id PK; uuid show_id FK; uuid role_id FK; uuid actor_profile_id FK; varchar note; smallint sort_order }
+    performance_credits { uuid id PK; uuid performance_id FK; varchar title; uuid staff_id FK; uuid member_id FK; varchar display_name "스냅숏"; smallint sort_order; bool is_visible }
+    staff_histories { uuid id PK; uuid staff_id FK; smallint year; varchar content; smallint sort_order }
     popups { uuid id PK; varchar image_url; varchar link_url; date start_date; date end_date; bool is_active; timestamptz deleted_at }
     team_accounts { uuid id PK; uuid performance_id FK; varchar label "A,B…"; varchar username UK "lower() 유일"; varchar password_hash "argon2id"; text password_enc "AES-256-GCM iv.ct.tag"; int session_version; int consecutive_failures; timestamptz locked_until; bool is_active; timestamptz revoked_at }
     room_reservations { uuid id PK; uuid team_account_id FK "NULL"; uuid performance_id FK; varchar team_name "스냅숏"; timestamptz start_at; timestamptz end_at "EXCLUDE gist &&"; varchar memo; timestamptz deleted_at }
@@ -82,5 +97,6 @@ erDiagram
 
 **이어 붙일 자리(R2·R3 — v1.2.0 이 V1_0_5~7 을 썼으므로 다음 빈 번호로)**: `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.
 | V1_0_10(임시) | 좌석 지정(U35): `performances.seat_selection_enabled`, `show_seat_layouts`·`show_seats`(칸 UPDATE 없음)·`reservation_seats`(살아 있는 예매만 부분 유니크) 신규, 예매 상태 ↔ 좌석 active 동기화 트리거, 예매 좌석 쓰기 규칙 트리거 · 초대자 드롭다운(U36): `members.inviter_listed`(기본 true)·`reservations.inviter_category`(MEMBER\|STAFF_RELATED), 끝 검사 |
+| V1_0_8(임시) | R3(U26·U28·U33): `performances.cast_public`(기본 false), `performance_roles`(name NULL = "출연" 묶음 — 부분 유니크 공연당 1)·`role_casts`·`show_role_casts`·`performance_credits`(연결 하나 또는 이름만 · 스냅숏)·`staff_histories` 신규(RLS·정책·GRANT), 끝 검사 |
 
 **이어 붙일 자리(R2·R3)**: V1_0_5 `deposit_notifications.reservation_id → reservations(id) ON DELETE SET NULL`(파기 때 함께 지움), V1_0_6 `show_role_casts.show_id → shows(id) ON DELETE CASCADE` — V1_0_4 의 테이블·컬럼 이름을 바꾸지 않고 FK 만 더한다.
