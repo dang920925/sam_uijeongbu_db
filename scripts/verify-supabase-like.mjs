@@ -24,8 +24,9 @@ import { fileURLToPath } from 'node:url';
 import { FLYWAY_IMAGE } from './flyway-args.mjs';
 
 const DB_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const CONTAINER = 'sam-uijeongbu-db';
-const HOST_PORT = 4110;
+// worktree 별 전용 컨테이너(기획 §22.5)를 쓸 때는 SAM_DB_CONTAINER·SAM_DB_PORT 로 바꾼다(기본은 원본 컨테이너)
+const CONTAINER = process.env.SAM_DB_CONTAINER ?? 'sam-uijeongbu-db';
+const HOST_PORT = Number(process.env.SAM_DB_PORT ?? 4110);
 const DB_PREFIX = 'fixture_supa_';
 const DB_EMPTY = `${DB_PREFIX}empty`;
 const DB_UPGRADE = `${DB_PREFIX}upgrade`;
@@ -40,6 +41,8 @@ const APP_TABLES = [
   'actor_profiles', 'actor_filmographies', 'applications', 'galleries', 'schedules', 'staff', 'popups',
   // V1_0_4(예매 1단계)
   'booking_policies', 'price_tiers', 'reservations', 'reservation_items', 'admission_logs',
+  // V1_0_11(임시 — 새 예매 푸시 U37)
+  'push_subscriptions',
 ];
 
 const results = [];

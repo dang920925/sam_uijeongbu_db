@@ -27,7 +27,7 @@ pnpm test                   # 실행기·SQL 동기화 테스트
 
 1. Supabase 새 프로젝트(서울 `ap-northeast-2`) — Enforce SSL 켬, Data API 끔.
 2. `flyway-production.conf` — 세션 풀러 5432 주소(`?sslmode=require`)와 `postgres.<project-ref>` 계정. `FLYWAY_PASSWORD=<Database password>`.
-3. `pnpm migrate production` → V1(스키마) → V1_0_1(sam_app) → V1_0_2(RLS·anon 회수·끝 검사) → V1_0_3(storage 버킷 media — Supabase 에만 적용) → V1_0_4(예매 1단계) → (트랙 T-SA, 임시 번호 — 배포 때 재번호) V1_0_6(일정 취소) → V1_0_7(신청 관심 작품·연락·진행).
+3. `pnpm migrate production` → V1(스키마) → V1_0_1(sam_app) → V1_0_2(RLS·anon 회수·끝 검사) → V1_0_3(storage 버킷 media — Supabase 에만 적용) → V1_0_4(예매 1단계) → V1_0_5(일정 취소, T-SA) → V1_0_6(신청 관심 작품·연락·진행, T-SA) → V1_0_7(새 예매 푸시 구독, U37) — v1.2.0 배포 묶음에서 운영 기준 연속 번호로 정리.
    - **V1_0_4 적용 전 확인(운영에 이미 회차가 있다)**: SQL Editor 에서 아래가 0행이어야 한다. 행이 있으면 V1_0_4 가 "V1_0_4 중단 — 같은 공연·날짜·시작 시각의 회차가 …" 로 롤백한다(데이터는 그대로) — 중복 회차를 정리한 뒤 다시 적용한다.
      ```sql
      SELECT performance_id, show_date, start_time, count(*) FROM shows GROUP BY 1, 2, 3 HAVING count(*) > 1;

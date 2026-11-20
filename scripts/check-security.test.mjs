@@ -126,3 +126,29 @@ describe('T-SA 마이그레이션 규칙(V1_0_6 일정 취소 · V1_0_7 신청 �
     }
   });
 });
+
+describe('V1_0_11 푸시 구독 마이그레이션 규칙(U37)', () => {
+  const v111 = readFileSync(join(ROOT, 'sql/V1_0_11__push_subscriptions.sql'), 'utf8');
+
+  it('새 테이블은 push_subscriptions 하나이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v111.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['push_subscriptions']);
+    assert.match(v111, /new_tables CONSTANT text\[\] := ARRAY\['push_subscriptions'\]/);
+  });
+
+  it('관리자를 지우면 구독도 지워지고 endpoint 는 전역 유일하다', () => {
+    assert.match(v111, /admin_id\s+UUID\s+NOT NULL REFERENCES admins \(id\) ON DELETE CASCADE/);
+    assert.match(v111, /CONSTRAINT uq_push_subscriptions_endpoint UNIQUE \(endpoint\)/);
+    assert.match(v111, /CREATE INDEX IF NOT EXISTS idx_push_subscriptions_admin_id_created_at/);
+  });
+
+  it('이름·연락처 같은 개인정보 컬럼을 두지 않는다(J-108)', () => {
+    assert.doesNotMatch(v111, /\b(name|phone|applicant)\w*\s+VARCHAR/i);
+  });
+
+  it('flyway_schema_history 를 건드리지 않는다', () => {
+    const withoutCheck = v111.slice(0, v111.indexOf('-- check:begin')) + v111.slice(v111.indexOf('-- check:end'));
+    const code = withoutCheck.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+    assert.doesNotMatch(code, /flyway_schema_history/);
+  });
+});
