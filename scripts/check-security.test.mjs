@@ -252,3 +252,35 @@ describe('V1_0_12 초대 유형별 가격 마이그레이션 규칙(U41)', () =>
     assert.doesNotMatch(code, /CREATE TABLE|flyway_schema_history/);
   });
 });
+
+describe('V1_0_13 입금 알림 마이그레이션 규칙(R2)', () => {
+  const v113 = readFileSync(join(ROOT, 'sql/V1_0_13__deposit_notifications.sql'), 'utf8');
+  const code = (v113.slice(0, v113.indexOf('-- check:begin')) + v113.slice(v113.indexOf('-- check:end')))
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+
+  it('새 테이블은 deposit_notifications 하나이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v113.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['deposit_notifications']);
+    assert.match(v113, /new_tables CONSTANT text\[\] := ARRAY\['deposit_notifications'\]/);
+  });
+
+  it('같은 원문 중복은 멱등 키 UNIQUE 로 DB 가 막는다', () => {
+    assert.match(v113, /CONSTRAINT uq_deposit_notifications_dedupe_key UNIQUE \(dedupe_key\)/);
+  });
+
+  it('예매가 파기되면 연결된 알림도 함께 지워진다(CASCADE)', () => {
+    assert.match(v113, /reservation_id\s+UUID\s+NULL REFERENCES reservations \(id\) ON DELETE CASCADE/);
+  });
+
+  it('원문(본문·금액·해시)은 트리거로 바꿀 수 없다', () => {
+    assert.match(v113, /BEFORE UPDATE ON deposit_notifications FOR EACH ROW EXECUTE FUNCTION deposit_notifications_guard_update\(\)/);
+    assert.match(v113, /NEW\.body_redacted IS DISTINCT FROM OLD\.body_redacted/);
+  });
+
+  it('DB enum 을 쓰지 않고, 다른 미배포 트랙 객체와 flyway_schema_history 를 참조하지 않는다(J-96)', () => {
+    assert.doesNotMatch(code, /CREATE TYPE/i);
+    assert.doesNotMatch(code, /flyway_schema_history|inviter_pricing|performance_roles/);
+  });
+});

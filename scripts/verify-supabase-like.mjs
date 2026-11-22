@@ -43,6 +43,8 @@ const APP_TABLES = [
   'booking_policies', 'price_tiers', 'reservations', 'reservation_items', 'admission_logs',
   // V1_0_7(새 예매 푸시 U37 — v1.2.0, 임시 V1_0_11)
   'push_subscriptions',
+  // V1_0_13(R2 입금 알림 — 임시 번호)
+  'deposit_notifications',
 ];
 
 const results = [];
