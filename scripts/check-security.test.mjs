@@ -229,3 +229,26 @@ describe('V1_0_11 단원 공개 동의일 마이그레이션 규칙(U39)', () =>
     assert.doesNotMatch(code, /flyway_schema_history/);
   });
 });
+
+describe('V1_0_12 초대 유형별 가격 마이그레이션 규칙(U41)', () => {
+  const v1012 = readFileSync(join(ROOT, 'sql/V1_0_12__inviter_pricing.sql'), 'utf8');
+  const code = v1012.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+  it('가격 역할은 BASE·SAM_RELATED 두 가지이고 공연당 역할마다 1개다', () => {
+    assert.match(code, /role IN \('BASE', 'SAM_RELATED'\)/);
+    assert.match(code, /CREATE UNIQUE INDEX IF NOT EXISTS uq_price_tiers_performance_role\s+ON price_tiers \(performance_id, role\) WHERE role IS NOT NULL/);
+  });
+
+  it('온라인 SAM 관계자 예매는 확인 시각이 있어야 한다(RSV_015 의 DB 방어)', () => {
+    assert.match(code, /inviter_category IS DISTINCT FROM 'SAM_RELATED' OR source <> 'ONLINE' OR sam_related_acknowledged_at IS NOT NULL/);
+  });
+
+  it('행을 지우지 않고 SAM_RELATED 등급을 만들지 않는다(가격을 임의로 정하지 않음 — 예매 닫힘)', () => {
+    assert.doesNotMatch(code, /DELETE FROM|INSERT INTO price_tiers/i);
+    assert.match(code, /SET role = 'BASE'/);
+  });
+
+  it('새 테이블을 만들지 않고 flyway_schema_history 를 건드리지 않는다', () => {
+    assert.doesNotMatch(code, /CREATE TABLE|flyway_schema_history/);
+  });
+});
