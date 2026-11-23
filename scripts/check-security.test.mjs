@@ -229,3 +229,64 @@ describe('V1_0_11 단원 공개 동의일 마이그레이션 규칙(U39)', () =>
     assert.doesNotMatch(code, /flyway_schema_history/);
   });
 });
+
+describe('V1_0_12 초대 유형별 가격 마이그레이션 규칙(U41)', () => {
+  const v1012 = readFileSync(join(ROOT, 'sql/V1_0_12__inviter_pricing.sql'), 'utf8');
+  const code = v1012.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+  it('가격 역할은 BASE·SAM_RELATED 두 가지이고 공연당 역할마다 1개다', () => {
+    assert.match(code, /role IN \('BASE', 'SAM_RELATED'\)/);
+    assert.match(code, /CREATE UNIQUE INDEX IF NOT EXISTS uq_price_tiers_performance_role\s+ON price_tiers \(performance_id, role\) WHERE role IS NOT NULL/);
+  });
+
+  it('온라인 SAM 관계자 예매는 확인 시각이 있어야 한다(RSV_015 의 DB 방어)', () => {
+    assert.match(code, /inviter_category IS DISTINCT FROM 'SAM_RELATED' OR source <> 'ONLINE' OR sam_related_acknowledged_at IS NOT NULL/);
+  });
+
+  it('행을 지우지 않고 SAM_RELATED 등급을 만들지 않는다(가격을 임의로 정하지 않음 — 예매 닫힘)', () => {
+    assert.doesNotMatch(code, /DELETE FROM|INSERT INTO price_tiers/i);
+    assert.match(code, /SET role = 'BASE'/);
+  });
+
+  it('새 테이블을 만들지 않고 flyway_schema_history 를 건드리지 않는다', () => {
+    assert.doesNotMatch(code, /CREATE TABLE|flyway_schema_history/);
+  });
+});
+
+describe('V1_0_13 입금 알림 마이그레이션 규칙(R2)', () => {
+  const v113 = readFileSync(join(ROOT, 'sql/V1_0_13__deposit_notifications.sql'), 'utf8');
+  const code = (v113.slice(0, v113.indexOf('-- check:begin')) + v113.slice(v113.indexOf('-- check:end')))
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+
+  it('새 테이블은 deposit_notifications 하나이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v113.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['deposit_notifications']);
+    assert.match(v113, /new_tables CONSTANT text\[\] := ARRAY\['deposit_notifications'\]/);
+  });
+
+  it('같은 원문 중복은 멱등 키 UNIQUE 로 DB 가 막는다', () => {
+    assert.match(v113, /CONSTRAINT uq_deposit_notifications_dedupe_key UNIQUE \(dedupe_key\)/);
+  });
+
+  it('예매가 파기되면 연결된 알림도 함께 지워진다(CASCADE)', () => {
+    assert.match(v113, /reservation_id\s+UUID\s+NULL REFERENCES reservations \(id\) ON DELETE CASCADE/);
+  });
+
+  it('허용 목록 밖 앱은 IGNORED_SOURCE 로 저장하고 예매를 가리키지 않는다', () => {
+    assert.match(v113, /'IGNORED_SOURCE'\)/);
+    assert.match(v113, /status NOT IN \('UNMATCHED', 'IGNORED_SOURCE'\) OR reservation_id IS NULL/);
+    assert.match(v113, /app_package\s+VARCHAR\(100\)\s+NULL/);
+  });
+
+  it('원문(본문·금액·해시)은 트리거로 바꿀 수 없다', () => {
+    assert.match(v113, /BEFORE UPDATE ON deposit_notifications FOR EACH ROW EXECUTE FUNCTION deposit_notifications_guard_update\(\)/);
+    assert.match(v113, /NEW\.body_redacted IS DISTINCT FROM OLD\.body_redacted/);
+  });
+
+  it('DB enum 을 쓰지 않고, 다른 미배포 트랙 객체와 flyway_schema_history 를 참조하지 않는다(J-96)', () => {
+    assert.doesNotMatch(code, /CREATE TYPE/i);
+    assert.doesNotMatch(code, /flyway_schema_history|inviter_pricing|performance_roles/);
+  });
+});
