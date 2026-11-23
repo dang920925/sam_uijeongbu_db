@@ -1,6 +1,6 @@
 # ERD — SAM 의정부
 
-> 최종 반영: **V1_0_16**(임시 — U46 연습실 시간 막기, 미배포) · 이전 V1_0_15(임시 — U45 팀 소속 배우·연습실 참석자) · 이전 V1_0_14(임시 — U43 입금 알림 기기 등록) · 이전 **V1_0_13** (2026-11-23 — v1.3.1: U41 V1_0_12 초대 유형별 가격 · SAM 관계자 확인 · R2 V1_0_13 입금 알림 자동 확인). 이전 V1_0_11 (2026-11-20 — v1.3.0: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁 · U39 V1_0_11 단원 공개 동의일. U41 은 다음 릴리스로 미룸). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
+> 최종 반영: **V1_0_17**(U48 캐스트 사진·회차 팀 지정, 미배포) · 이전 V1_0_16(임시 — U46 연습실 시간 막기) · 이전 V1_0_15(임시 — U45 팀 소속 배우·연습실 참석자) · 이전 V1_0_14(임시 — U43 입금 알림 기기 등록) · 이전 **V1_0_13** (2026-11-23 — v1.3.1: U41 V1_0_12 초대 유형별 가격 · SAM 관계자 확인 · R2 V1_0_13 입금 알림 자동 확인). 이전 V1_0_11 (2026-11-20 — v1.3.0: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁 · U39 V1_0_11 단원 공개 동의일. U41 은 다음 릴리스로 미룸). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
 > 열거값은 VARCHAR + CHECK(UPPER_SNAKE), 시각은 TIMESTAMPTZ, 관리 콘텐츠는 소프트 삭제(`deleted_at`), id 는 UUID(서버가 v7 생성).
 
 ```mermaid
@@ -21,6 +21,10 @@ erDiagram
     performances ||--o{ room_reservations : "연습실 예약(V1_0_8, CASCADE)"
     team_accounts |o--o{ room_reservations : "예약 팀(SET NULL)"
     team_accounts ||--o{ team_members : "소속 배우(V1_0_15, CASCADE)"
+    performances ||--o{ performance_group_photos : "단체샷 0~4장(V1_0_17, CASCADE)"
+    performance_roles ||--o{ cast_role_photos : "배역 개인샷(V1_0_17, CASCADE)"
+    actor_profiles ||--o{ cast_role_photos : "배우(CASCADE)"
+    team_accounts |o--o{ shows : "회차 팀 지정(V1_0_17, SET NULL · 폐기 시 NULL)"
     members ||--o{ team_members : "배우(CASCADE)"
     room_reservations ||--o{ room_reservation_attendees : "참석자(V1_0_15, CASCADE)"
     members ||--o{ room_reservation_attendees : "배우(CASCADE)"
@@ -59,7 +63,7 @@ erDiagram
     performance_detail_images { uuid id PK; uuid performance_id FK; varchar image_url; smallint sort_order }
     classes { uuid id PK; uuid performance_id FK; varchar name; time start_time; time end_time; date deadline; varchar location; varchar status "ACTIVE|INACTIVE" }
     class_days { uuid class_id PK; smallint day_of_week PK }
-    shows { uuid id PK; uuid class_id FK "NULL 허용(V1_0_4)"; uuid performance_id FK; date show_date; time start_time; varchar venue; varchar status "UPCOMING|BOOKING_OPEN|COMPLETED"; int total_seats; bool booking_enabled "V1_0_4"; timestamptz booking_open_at }
+    shows { uuid id PK; uuid class_id FK "NULL 허용(V1_0_4)"; uuid performance_id FK; date show_date; time start_time; varchar venue; varchar status "UPCOMING|BOOKING_OPEN|COMPLETED"; int total_seats; bool booking_enabled "V1_0_4"; timestamptz booking_open_at; uuid team_account_id FK "V1_0_17 NULL, 같은 공연·폐기 안 된 팀만(트리거)" }
     members { uuid id PK; varchar name; varchar type "GENERAL|ACTOR"; varchar phone; bool is_visible; date joined_at; varchar invite_code UK "V1_0_4"; date public_consent_at "V1_0_11"; timestamptz deleted_at }
     booking_policies { uuid performance_id PK; varchar deposit_bank; varchar deposit_account_number; varchar deposit_account_holder; smallint max_tickets_per_booking "1~20"; smallint deposit_deadline_hours "1~168"; varchar refund_policy_text; varchar inquiry_contact "선택, URL 은 https" }
     reservations { uuid id PK; uuid performance_id FK; uuid show_id FK; char code "4자리, 공연 안 UK"; smallint quantity "줄 합"; int amount "줄 합 또는 관리자 덮어쓰기"; bool tier_token_used; varchar booker_name; varchar booker_phone "숫자만"; varchar depositor_name; uuid inviter_member_id FK; varchar inviter_note; varchar status "PENDING|CONFIRMED|CANCELLED"; varchar source "ONLINE|ADMIN"; timestamptz deposit_due_at; varchar confirmed_by "MANUAL|AUTO"; uuid confirmed_admin_id FK; varchar cancel_reason; smallint admitted_count "0~quantity"; int version }
@@ -85,7 +89,9 @@ erDiagram
     performance_credits { uuid id PK; uuid performance_id FK; varchar title; uuid staff_id FK; uuid member_id FK; varchar display_name "스냅숏"; smallint sort_order; bool is_visible }
     staff_histories { uuid id PK; uuid staff_id FK; smallint year; varchar content; smallint sort_order }
     popups { uuid id PK; varchar image_url; varchar link_url; date start_date; date end_date; bool is_active; timestamptz deleted_at }
-    team_accounts { uuid id PK; uuid performance_id FK; varchar label "A,B…"; varchar username UK "lower() 유일"; varchar password_hash "argon2id"; text password_enc "AES-256-GCM iv.ct.tag"; int session_version; int consecutive_failures; timestamptz locked_until; bool is_active; timestamptz revoked_at }
+    team_accounts { uuid id PK; uuid performance_id FK; varchar label "A,B…"; varchar username UK "lower() 유일"; varchar password_hash "argon2id"; text password_enc "AES-256-GCM iv.ct.tag"; int session_version; int consecutive_failures; timestamptz locked_until; bool is_active; timestamptz revoked_at; varchar team_photo_url "V1_0_17 팀샷" }
+    performance_group_photos { uuid id PK; uuid performance_id FK; varchar image_url; smallint sort_order "0~3, (공연,순서) UK DEFERRABLE"; timestamptz created_at }
+    cast_role_photos { uuid role_id PK; uuid actor_profile_id PK; varchar image_url; timestamptz created_at; timestamptz updated_at }
     room_reservations { uuid id PK; uuid team_account_id FK "NULL"; uuid performance_id FK; varchar team_name "스냅숏"; timestamptz start_at; timestamptz end_at "EXCLUDE gist &&"; varchar memo; timestamptz deleted_at }
     team_members { uuid team_account_id PK "FK"; uuid member_id PK "FK"; timestamptz created_at }
     room_reservation_attendees { uuid reservation_id PK "FK"; uuid member_id PK "FK"; timestamptz created_at }
@@ -110,6 +116,7 @@ erDiagram
 | V1_0_14(임시, U43) | 입금 알림 기기 등록: `deposit_devices` 신규(이름 · 토큰 SHA-256 해시 UNIQUE · 등록 관리자 SET NULL · 마지막 수신 · 해제 시각 — 행은 지우지 않음, GRANT 에 DELETE 없음), `deposit_notifications.device_id`(NULL, SET NULL) + 원문 불변 트리거에 포함, RLS·정책·GRANT, 끝 검사. 해제 안 된 기기 상한 5대는 서버가 센다 |
 | V1_0_15(임시, U45) | 팀 소속 배우·연습실 참석자: `team_members`(팀 계정·단원 조합 PK, 둘 다 CASCADE — 폐기된 팀은 서버가 정리), `room_reservation_attendees`(예약·단원 조합 PK, 둘 다 CASCADE — 예약 파기와 함께), RLS·정책·GRANT(SELECT·INSERT·DELETE), 끝 검사. "캐스트 배우만 팀에"·"팀 소속 배우만 참석자로"는 서버가 검사 |
 | V1_0_16(임시, U46) | 연습실 시간 막기: `room_blocks`(제목·메모·반복 NONE/WEEKLY·요일 ISO·시작/끝 분 30분 단위 30분~하루·시작/종료일 ≤2년·이 날만 해제 skip_dates), 독립 테이블(FK 없음), RLS·정책·GRANT, 끝 검사. 발생분은 행으로 펼치지 않고 서버가 규칙으로 계산 |
+| V1_0_17(U48) | 캐스트 사진·회차 팀 지정: `performance_group_photos`(공연당 0~4장 — sort_order 0~3 CHECK + (공연, 순서) UNIQUE DEFERRABLE), `team_accounts.team_photo_url`(NULL), `cast_role_photos`(role_id·actor_profile_id 조합 PK = role_casts 키, 배역·배우 프로필 CASCADE — role_casts 에는 FK 없음: 기본 캐스트 저장이 행을 다시 만든다), `shows.team_account_id`(NULL, SET NULL, 트리거 `shows_guard_team_account` 가 같은 공연·폐기 안 된 팀만 허용, `team_accounts_clear_show_team` 이 폐기 때 NULL), RLS·정책·GRANT, 함수 EXECUTE 회수, 끝 검사 |
 | V1_0_13(v1.3.1, R2) | 입금 알림 자동 확인(R2): `deposit_notifications` 신규(출처 앱 패키지·이름 · 허용 밖 앱 IGNORED_SOURCE · 잔액 지운 본문 · 해석 금액 · 판정 상태/이유 · 멱등 키 UNIQUE(내용 해시 + 분) · 예매 CASCADE · 관리자 처리), 원문 불변 트리거, RLS·정책·GRANT, 끝 검사 |
 | V1_0_11(v1.3.0, U39, 임시 V1_0_12) | 단원 홈페이지 공개 동의일: `members.public_consent_at DATE NULL`(기존 행 NULL). 권한·트리거 변경 없음 |
 
