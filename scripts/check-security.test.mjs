@@ -290,3 +290,30 @@ describe('V1_0_13 입금 알림 마이그레이션 규칙(R2)', () => {
     assert.doesNotMatch(code, /flyway_schema_history|inviter_pricing|performance_roles/);
   });
 });
+
+describe('V1_0_14 입금 알림 기기 마이그레이션 규칙(U43)', () => {
+  const v114 = readFileSync(join(ROOT, 'sql/V1_0_14__deposit_devices.sql'), 'utf8');
+
+  it('새 테이블은 deposit_devices 하나이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v114.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['deposit_devices']);
+    assert.match(v114, /new_tables CONSTANT text\[\] := ARRAY\['deposit_devices'\]/);
+  });
+
+  it('토큰은 SHA-256 해시만 저장하고 겹치지 않는다(평문 컬럼 없음)', () => {
+    assert.match(v114, /token_hash\s+CHAR\(64\)\s+NOT NULL/);
+    assert.match(v114, /CONSTRAINT uq_deposit_devices_token_hash UNIQUE \(token_hash\)/);
+    assert.doesNotMatch(v114, /^\s+token\s+/m);
+  });
+
+  it('기기 행은 지우지 않는다(GRANT 에 DELETE 없음 — 해제는 revoked_at)', () => {
+    assert.match(v114, /GRANT SELECT, INSERT, UPDATE ON deposit_devices TO sam_app;/);
+    assert.doesNotMatch(v114, /^GRANT[^;]*DELETE[^;]*deposit_devices/m);
+  });
+
+  it('알림의 보낸 기기는 NULL 허용 FK(SET NULL)이고 원문 불변 트리거에 들어간다', () => {
+    assert.match(v114, /ADD COLUMN IF NOT EXISTS device_id UUID NULL REFERENCES deposit_devices \(id\) ON DELETE SET NULL/);
+    assert.match(v114, /NEW\.device_id IS DISTINCT FROM OLD\.device_id/);
+    assert.match(v114, /NEW\.body_redacted IS DISTINCT FROM OLD\.body_redacted/);
+  });
+});
