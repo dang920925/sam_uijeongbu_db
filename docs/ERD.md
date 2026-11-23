@@ -1,6 +1,6 @@
 # ERD — SAM 의정부
 
-> 최종 반영: **V1_0_13** (2026-11-23 — v1.3.1: U41 V1_0_12 초대 유형별 가격 · SAM 관계자 확인 · R2 V1_0_13 입금 알림 자동 확인). 이전 V1_0_11 (2026-11-20 — v1.3.0: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁 · U39 V1_0_11 단원 공개 동의일. U41 은 다음 릴리스로 미룸). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
+> 최종 반영: **V1_0_14**(임시 — U43 입금 알림 기기 등록, 미배포) · 이전 **V1_0_13** (2026-11-23 — v1.3.1: U41 V1_0_12 초대 유형별 가격 · SAM 관계자 확인 · R2 V1_0_13 입금 알림 자동 확인). 이전 V1_0_11 (2026-11-20 — v1.3.0: T-PR V1_0_8 팀 계정·연습실 예약 · T-SEAT V1_0_9 좌석 지정·초대자 구분 · R3 V1_0_10 배역·캐스팅·크레딧·연출진 연혁 · U39 V1_0_11 단원 공개 동의일. U41 은 다음 릴리스로 미룸). 이전: V1_0_7(v1.2.0). 정본은 `sql/` 의 Flyway 마이그레이션이고, 서버 `prisma/schema.prisma` 는 `prisma db pull` 파생물이다.
 > 열거값은 VARCHAR + CHECK(UPPER_SNAKE), 시각은 TIMESTAMPTZ, 관리 콘텐츠는 소프트 삭제(`deleted_at`), id 는 UUID(서버가 v7 생성).
 
 ```mermaid
@@ -33,6 +33,8 @@ erDiagram
     performances ||--o{ application_performances : "관심 대상(CASCADE)"
     admins ||--o{ push_subscriptions : "기기별 푸시 구독(V1_0_7, CASCADE)"
     reservations ||--o{ deposit_notifications : "입금 알림 판정(V1_0_13, CASCADE)"
+    admins |o--o{ deposit_devices : "등록 관리자(V1_0_14, SET NULL)"
+    deposit_devices |o--o{ deposit_notifications : "보낸 기기(V1_0_14, SET NULL)"
     shows ||--o| show_seat_layouts : "좌석 배치 크기(V1_0_9, CASCADE)"
     shows ||--o{ show_seats : "격자 칸(V1_0_9, CASCADE)"
     reservations ||--o{ reservation_seats : "예매 좌석(V1_0_9, CASCADE)"
@@ -60,7 +62,8 @@ erDiagram
     price_tiers { uuid id PK; uuid performance_id FK; varchar name "공연 안 UK"; int price "1~1000000"; varchar visibility "PUBLIC|LINK_ONLY"; varchar link_token UK; smallint sort_order; bool is_active }
     reservation_items { uuid id PK; uuid reservation_id FK; uuid tier_id FK "NULL = 직접 입력"; varchar tier_name "스냅숏"; int unit_price "스냅숏"; smallint quantity; int line_amount }
     admission_logs { uuid id PK; uuid reservation_id FK; smallint delta; smallint admitted_after; uuid admin_id FK }
-    deposit_notifications { uuid id PK; timestamptz received_at; varchar source; varchar app_package; varchar app_name; varchar title; varchar body_redacted "잔액 제거"; int parsed_amount; varchar status "AUTO_CONFIRMED|PARTIAL|NEEDS_REVIEW|UNMATCHED|MANUALLY_MATCHED|IGNORED|IGNORED_SOURCE"; varchar review_reason; uuid reservation_id FK; char content_hash; char dedupe_key UK; uuid resolved_admin_id FK }
+    deposit_notifications { uuid id PK; timestamptz received_at; varchar source; varchar app_package; varchar app_name; varchar title; varchar body_redacted "잔액 제거"; int parsed_amount; varchar status "AUTO_CONFIRMED|PARTIAL|NEEDS_REVIEW|UNMATCHED|MANUALLY_MATCHED|IGNORED|IGNORED_SOURCE"; varchar review_reason; uuid reservation_id FK; char content_hash; char dedupe_key UK; uuid resolved_admin_id FK; uuid device_id FK "V1_0_14, 비밀값 수신은 NULL" }
+    deposit_devices { uuid id PK; varchar name "1~40"; char token_hash UK "sha256 hex — 평문 저장 안 함"; uuid created_by FK; timestamptz last_seen_at; timestamptz revoked_at "해제" }
     push_subscriptions { uuid id PK; uuid admin_id FK; varchar endpoint UK "https"; varchar p256dh; varchar auth; varchar user_agent "기기 이름"; timestamptz last_success_at }
     show_seat_layouts { uuid show_id PK; smallint row_count "1~40"; smallint col_count "1~60" }
     show_seats { uuid id PK; uuid show_id FK; smallint row_index "0~39"; smallint col_index "0~59"; varchar kind "SEAT|AISLE|VOID"; varchar row_label "SEAT 만"; smallint seat_number "SEAT 만" }
@@ -97,6 +100,7 @@ erDiagram
 
 | V1_0_7(v1.2.0, 임시 V1_0_11) | 새 예매 푸시(U37): `push_subscriptions` 신규(관리자 × 기기, endpoint 유일·https, 관리자 삭제 CASCADE, RLS·정책·GRANT), 끝 검사 |
 | V1_0_12(v1.3.1, U41) | 초대한 사람 3종·초대 유형별 가격: `price_tiers.role`(BASE\|SAM_RELATED, 공연당 역할 1개 부분 유니크, 역할 등급은 PUBLIC), `reservations.inviter_category` 에 SAM_RELATED(단원 id 는 MEMBER 만), `reservations.sam_related_acknowledged_at`(온라인 SAM 관계자 필수 CHECK). 운영 이전: 역할 없는 공연의 사용 중 PUBLIC 등급 1개(sort_order·id 앞)를 BASE 로 — SAM_RELATED 는 만들지 않음(관리자 입력 전까지 NOT_READY) |
+| V1_0_14(임시, U43) | 입금 알림 기기 등록: `deposit_devices` 신규(이름 · 토큰 SHA-256 해시 UNIQUE · 등록 관리자 SET NULL · 마지막 수신 · 해제 시각 — 행은 지우지 않음, GRANT 에 DELETE 없음), `deposit_notifications.device_id`(NULL, SET NULL) + 원문 불변 트리거에 포함, RLS·정책·GRANT, 끝 검사. 해제 안 된 기기 상한 5대는 서버가 센다 |
 | V1_0_13(v1.3.1, R2) | 입금 알림 자동 확인(R2): `deposit_notifications` 신규(출처 앱 패키지·이름 · 허용 밖 앱 IGNORED_SOURCE · 잔액 지운 본문 · 해석 금액 · 판정 상태/이유 · 멱등 키 UNIQUE(내용 해시 + 분) · 예매 CASCADE · 관리자 처리), 원문 불변 트리거, RLS·정책·GRANT, 끝 검사 |
 | V1_0_11(v1.3.0, U39, 임시 V1_0_12) | 단원 홈페이지 공개 동의일: `members.public_consent_at DATE NULL`(기존 행 NULL). 권한·트리거 변경 없음 |
 

@@ -45,6 +45,8 @@ const APP_TABLES = [
   'push_subscriptions',
   // V1_0_13(R2 입금 알림 — 임시 번호)
   'deposit_notifications',
+  // V1_0_14(U43 입금 알림 기기 — 임시 번호)
+  'deposit_devices',
 ];
 
 const results = [];
