@@ -8,6 +8,7 @@
 --   ① deposit_notifications(신규) — 알림 1건 = 1행. 잔액 부분을 지운 본문(J-51 최소 수집), 해석 금액, 판정 상태·이유,
 --      연결된 예매, 멱등 키(내용 해시 + 분 단위 — 같은 원문이 짧은 시간에 두 번 오면 한 번만), 관리자 처리 기록.
 --      받은 금액(일부 입금)은 컬럼을 두지 않고 연결된 알림의 금액 합으로 계산한다(파생값).
+--      허용 목록 밖 앱(DEPOSIT_ALLOWED_PACKAGES)·'입금' 없는 카카오톡 알림은 저장만 하고 판정하지 않는다(IGNORED_SOURCE).
 --      예매가 보유기간으로 파기되면 연결된 알림도 함께 지운다(CASCADE). 연결 안 된 알림은 일일 작업이 30일 뒤 지운다(서버).
 --   ② 원문 불변 트리거 — 받은 시각·출처·제목·본문·금액·해시는 바꿀 수 없다(판정 상태·연결·처리 기록만 바뀐다).
 --   ③ RLS + sam_app_all 정책 + GRANT(SELECT·INSERT·UPDATE·DELETE), anon·authenticated·PUBLIC 회수, 끝 검사(V1_0_7 과 같은 식).
@@ -24,8 +25,10 @@ CREATE TABLE IF NOT EXISTS deposit_notifications (
     received_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
     -- 폰이 보낸 알림 시각(형식이 맞을 때만)
     posted_at         TIMESTAMPTZ   NULL,
-    -- 알림을 보낸 앱(예: com.kakaobank.channel · com.kakao.talk 알림톡 · 카카오페이) — MacroDroid 가 보낸 값
+    -- 알림을 보낸 앱 — MacroDroid 가 보낸 값(source: 자유 문자열 · app_package: 패키지 이름 · app_name: 앱 이름)
     source            VARCHAR(100)  NULL,
+    app_package       VARCHAR(100)  NULL,
+    app_name          VARCHAR(100)  NULL,
     title             VARCHAR(200)  NULL,
     -- 잔액 숫자를 지운 본문(J-51)
     body_redacted     VARCHAR(1000) NULL,
@@ -45,7 +48,7 @@ CREATE TABLE IF NOT EXISTS deposit_notifications (
     updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
     CONSTRAINT uq_deposit_notifications_dedupe_key UNIQUE (dedupe_key),
     CONSTRAINT ck_deposit_notifications_status CHECK (
-        status IN ('AUTO_CONFIRMED', 'PARTIAL', 'NEEDS_REVIEW', 'UNMATCHED', 'MANUALLY_MATCHED', 'IGNORED')
+        status IN ('AUTO_CONFIRMED', 'PARTIAL', 'NEEDS_REVIEW', 'UNMATCHED', 'MANUALLY_MATCHED', 'IGNORED', 'IGNORED_SOURCE')
     ),
     CONSTRAINT ck_deposit_notifications_review_reason CHECK (
         review_reason IS NULL
@@ -57,7 +60,7 @@ CREATE TABLE IF NOT EXISTS deposit_notifications (
     -- 확정·일부 입금·관리자 연결은 예매가 있어야 한다. 확인 안 된 입금(UNMATCHED)은 예매가 없다
     CONSTRAINT ck_deposit_notifications_reservation_pair CHECK (
         (status NOT IN ('AUTO_CONFIRMED', 'PARTIAL', 'MANUALLY_MATCHED') OR reservation_id IS NOT NULL)
-        AND (status <> 'UNMATCHED' OR reservation_id IS NULL)
+        AND (status NOT IN ('UNMATCHED', 'IGNORED_SOURCE') OR reservation_id IS NULL)
     ),
     -- 일부 입금은 금액을 안다
     CONSTRAINT ck_deposit_notifications_partial_amount CHECK (status <> 'PARTIAL' OR parsed_amount IS NOT NULL),
@@ -85,6 +88,8 @@ BEGIN
     IF NEW.received_at IS DISTINCT FROM OLD.received_at
        OR NEW.posted_at IS DISTINCT FROM OLD.posted_at
        OR NEW.source IS DISTINCT FROM OLD.source
+       OR NEW.app_package IS DISTINCT FROM OLD.app_package
+       OR NEW.app_name IS DISTINCT FROM OLD.app_name
        OR NEW.title IS DISTINCT FROM OLD.title
        OR NEW.body_redacted IS DISTINCT FROM OLD.body_redacted
        OR NEW.parsed_amount IS DISTINCT FROM OLD.parsed_amount

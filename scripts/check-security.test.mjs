@@ -274,6 +274,12 @@ describe('V1_0_13 입금 알림 마이그레이션 규칙(R2)', () => {
     assert.match(v113, /reservation_id\s+UUID\s+NULL REFERENCES reservations \(id\) ON DELETE CASCADE/);
   });
 
+  it('허용 목록 밖 앱은 IGNORED_SOURCE 로 저장하고 예매를 가리키지 않는다', () => {
+    assert.match(v113, /'IGNORED_SOURCE'\)/);
+    assert.match(v113, /status NOT IN \('UNMATCHED', 'IGNORED_SOURCE'\) OR reservation_id IS NULL/);
+    assert.match(v113, /app_package\s+VARCHAR\(100\)\s+NULL/);
+  });
+
   it('원문(본문·금액·해시)은 트리거로 바꿀 수 없다', () => {
     assert.match(v113, /BEFORE UPDATE ON deposit_notifications FOR EACH ROW EXECUTE FUNCTION deposit_notifications_guard_update\(\)/);
     assert.match(v113, /NEW\.body_redacted IS DISTINCT FROM OLD\.body_redacted/);
