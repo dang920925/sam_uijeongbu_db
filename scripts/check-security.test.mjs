@@ -317,3 +317,53 @@ describe('V1_0_14 입금 알림 기기 마이그레이션 규칙(U43)', () => {
     assert.match(v114, /NEW\.body_redacted IS DISTINCT FROM OLD\.body_redacted/);
   });
 });
+
+describe('V1_0_15 팀 소속 배우·연습실 참석자 마이그레이션 규칙(U45)', () => {
+  const v115 = readFileSync(join(ROOT, 'sql/V1_0_15__team_members_attendance.sql'), 'utf8');
+
+  it('새 테이블은 team_members·room_reservation_attendees 이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v115.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['team_members', 'room_reservation_attendees']);
+    assert.match(v115, /new_tables CONSTANT text\[\] := ARRAY\['team_members', 'room_reservation_attendees'\]/);
+  });
+
+  it('조합 PK 이고 팀 계정·예약·단원이 지워지면 함께 지워진다(CASCADE)', () => {
+    assert.match(v115, /PRIMARY KEY \(team_account_id, member_id\)/);
+    assert.match(v115, /PRIMARY KEY \(reservation_id, member_id\)/);
+    assert.match(v115, /REFERENCES team_accounts \(id\) ON DELETE CASCADE/);
+    assert.match(v115, /REFERENCES room_reservations \(id\) ON DELETE CASCADE/);
+    assert.equal([...v115.matchAll(/REFERENCES members \(id\) ON DELETE CASCADE/g)].length, 2);
+  });
+
+  it('런타임 계정에 UPDATE 를 주지 않고 flyway_schema_history 를 건드리지 않는다', () => {
+    assert.match(v115, /GRANT SELECT, INSERT, DELETE ON team_members, room_reservation_attendees TO sam_app;/);
+    assert.doesNotMatch(v115, /^GRANT[^;]*UPDATE/m);
+    assert.doesNotMatch(v115, /(INSERT INTO|UPDATE|DELETE FROM|ALTER TABLE)\s+(public\.)?flyway_schema_history/i);
+  });
+});
+
+describe('V1_0_16 연습실 시간 막기 마이그레이션 규칙(U46)', () => {
+  const v116 = readFileSync(join(ROOT, 'sql/V1_0_16__room_blocks.sql'), 'utf8');
+
+  it('새 테이블은 room_blocks 하나이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v116.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['room_blocks']);
+    assert.match(v116, /new_tables CONSTANT text\[\] := ARRAY\['room_blocks'\]/);
+  });
+
+  it('반복은 NONE·WEEKLY 이고 DB enum 을 쓰지 않는다', () => {
+    assert.match(v116, /CHECK \(repeat IN \('NONE', 'WEEKLY'\)\)/);
+    assert.doesNotMatch(v116, /CREATE TYPE/);
+  });
+
+  it('30분 단위·30분~하루(4시간 제한 없음)·NONE 은 하루만', () => {
+    assert.match(v116, /start_minutes % 30 = 0 AND end_minutes % 30 = 0/);
+    assert.match(v116, /end_minutes <= 1440/);
+    assert.doesNotMatch(v116, /240/);
+    assert.match(v116, /repeat = 'WEEKLY' OR end_date = start_date/);
+  });
+
+  it('flyway_schema_history 를 건드리지 않는다', () => {
+    assert.doesNotMatch(v116, /(INSERT INTO|UPDATE|DELETE FROM|ALTER TABLE)\s+(public\.)?flyway_schema_history/i);
+  });
+});
