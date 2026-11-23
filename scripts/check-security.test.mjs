@@ -341,3 +341,29 @@ describe('V1_0_15 팀 소속 배우·연습실 참석자 마이그레이션 규�
     assert.doesNotMatch(v115, /(INSERT INTO|UPDATE|DELETE FROM|ALTER TABLE)\s+(public\.)?flyway_schema_history/i);
   });
 });
+
+describe('V1_0_16 연습실 시간 막기 마이그레이션 규칙(U46)', () => {
+  const v116 = readFileSync(join(ROOT, 'sql/V1_0_16__room_blocks.sql'), 'utf8');
+
+  it('새 테이블은 room_blocks 하나이고 RLS·정책 목록에 있다', () => {
+    const tables = [...v116.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+    assert.deepEqual(tables, ['room_blocks']);
+    assert.match(v116, /new_tables CONSTANT text\[\] := ARRAY\['room_blocks'\]/);
+  });
+
+  it('반복은 NONE·WEEKLY 이고 DB enum 을 쓰지 않는다', () => {
+    assert.match(v116, /CHECK \(repeat IN \('NONE', 'WEEKLY'\)\)/);
+    assert.doesNotMatch(v116, /CREATE TYPE/);
+  });
+
+  it('30분 단위·30분~하루(4시간 제한 없음)·NONE 은 하루만', () => {
+    assert.match(v116, /start_minutes % 30 = 0 AND end_minutes % 30 = 0/);
+    assert.match(v116, /end_minutes <= 1440/);
+    assert.doesNotMatch(v116, /240/);
+    assert.match(v116, /repeat = 'WEEKLY' OR end_date = start_date/);
+  });
+
+  it('flyway_schema_history 를 건드리지 않는다', () => {
+    assert.doesNotMatch(v116, /(INSERT INTO|UPDATE|DELETE FROM|ALTER TABLE)\s+(public\.)?flyway_schema_history/i);
+  });
+});
